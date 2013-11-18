@@ -1,0 +1,19 @@
+
+animation_preview_tile_1 = {
+	material_contexts = {
+	}
+	shader = "base:DIFFUSE_MAP"
+	textures = {
+		diffuse_map = "core/editor_slave/units/animation_preview_tile/anim_preview_grid"
+	}
+	variables = {
+		glossiness = {
+			type = "scalar"
+			value = 0.5
+		}
+		specular = {
+			type = "scalar"
+			value = 0.02
+		}
+	}
+}

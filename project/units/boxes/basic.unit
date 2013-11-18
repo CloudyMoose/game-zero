@@ -1,0 +1,20 @@
+
+lights = {
+}
+lod = [
+]
+materials = [
+	"units/boxes/basic"
+]
+renderables = {
+	box = {
+		culling = "bounding_volume"
+		light_baking = "none"
+		occluder = false
+		shadow_caster = false
+		surface_queries = false
+		viewport_visible = true
+	}
+}
+visibility_groups = {
+}

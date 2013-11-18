@@ -1,0 +1,2 @@
+lua = ["core/editor_slave/timpani_player"]
+physics_properties = ["global"] 

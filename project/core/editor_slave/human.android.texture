@@ -1,0 +1,42 @@
+
+input = [
+	{
+		texture = "core/editor_slave/human_pot.dds"
+	}
+]
+output = {
+	android = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "DXT5"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	win32 = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0.5
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "DXT5"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+}

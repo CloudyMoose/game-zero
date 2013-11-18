@@ -1,0 +1,4 @@
+font = ["core/bitsquid_splash/georgia_partial"]
+lua = ["core/bitsquid_splash/bitsquid_splash"]
+material = ["core/bitsquid_splash/gui"]
+unit = ["core/units/camera"]

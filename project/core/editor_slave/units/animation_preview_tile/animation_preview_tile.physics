@@ -1,0 +1,18 @@
+
+actors = [
+	{
+		enabled = true
+		mass = 0
+		name = "animation_preview_tile"
+		node = "animation_preview_tile"
+		shapes = [
+			{
+				material = "default"
+				shape = "animation_preview_tile"
+				template = "default"
+				type = "mesh"
+			}
+		]
+		template = "static"
+	}
+]

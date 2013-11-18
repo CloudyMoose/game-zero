@@ -1,0 +1,36 @@
+
+lights = {
+	omni = {
+		cast_shadows = false
+		color = [
+			0.4980392
+			0.4980392
+			0.4980392
+		]
+		falloff_end = 8
+		falloff_exponent = 1
+		falloff_start = 0
+		node = "rp_root"
+		spot_angle_end = 0
+		spot_angle_start = 0
+		type = "omni"
+	}
+}
+lod = [
+]
+materials = [
+]
+renderables = {
+	g_light = {
+		culling = "bounding_volume"
+		shadow_caster = false
+		viewport_visible = true
+	}
+}
+snap_points = [
+]
+visibility_groups = {
+	light = [
+		"g_light"
+	]
+}

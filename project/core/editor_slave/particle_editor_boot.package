@@ -1,0 +1,2 @@
+lua = ["core/editor_slave/particle_editor"]
+physics_properties = ["global"] 

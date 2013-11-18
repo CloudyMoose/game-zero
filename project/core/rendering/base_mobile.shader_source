@@ -1,0 +1,1792 @@
+render_states = {
+	ambient_no_depth_write = {
+		inherits = "default"
+		states = {
+			z_write_enable = "false"
+		}
+	}
+	
+	depth_testing = {
+		inherits = "default"
+		states = {
+			z_enable = "true"
+			z_write_enable = "true"
+		}
+	}	
+	
+	mobile_ao = {
+		inherits = "opacity"
+		states = {
+			src_blend = "blend_zero"
+			dest_blend = "blend_src_alpha"
+		}
+	}	
+}
+
+hlsl_shaders = {
+	mobile_water = {
+		includes = [ "common" ]	
+		
+		samplers = {
+			normal_map = { sampler_states = "wrap_point" }
+		}
+		
+		vp_code = """ 
+			PRECISION MEDIUMP float;
+			
+			uniform HIGHP mat4 world;
+			uniform HIGHP mat4 view_proj;
+			uniform LOWP vec3 sun_color;
+			uniform LOWP vec3 sun_direction;
+			uniform LOWP vec3 ambient_top_color;
+			uniform HIGHP vec3 camera_pos;
+			uniform HIGHP float time;
+			uniform LOWP float ambient_camera_falloff;
+			uniform HIGHP vec2 fog_depth_range;
+			uniform HIGHP vec2 fog_height_range;
+
+			uniform vec2 layer0_normal_tile_size; // exports={ name="Layer 0 Normal Map Tile" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+			uniform vec2 layer1_normal_tile_size; // exports={ name="Layer 1 Normal Map Tile" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}	
+				
+			uniform vec2 layer0_normal_tile_scroll_speed; // exports={ name="Layer 0 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+			uniform vec2 layer1_normal_tile_scroll_speed; // exports={ name="Layer 1 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}	
+			
+			attribute vec4 position0;
+			
+			varying LOWP float v_fog_factor;
+			varying LOWP vec3 v_neg_sun_dir;
+			varying vec3 v_color;
+			varying vec3 v_h;
+			varying vec4 v_uv;
+			
+			#ifdef TANGENT_SPACE
+				attribute vec3 tangent;
+				attribute vec3 binormal;
+				attribute vec3 normal;
+				attribute vec2 texcoord0;
+				
+				varying vec3 v_tsm0;
+				varying vec3 v_tsm1;
+				varying vec3 v_tsm2;
+				
+				void tspace_transform_transpose(out vec3 tangent_out, out vec3 binormal_out, out vec3 normal_out, vec3 tangent, vec3 binormal, vec3 normal, mat3 mat) {
+					vec3 t = tangent * mat;
+					vec3 b = binormal * mat;
+					vec3 n = normal * mat;
+
+					// find transpose of 3x3matrix
+					tangent_out.x = t.x; tangent_out.y = b.x; tangent_out.z = n.x;
+					binormal_out.x = t.y; binormal_out.y = b.y; binormal_out.z = n.y;
+					normal_out.x = t.z; normal_out.y = b.z; normal_out.z = n.z;
+				}
+			#endif
+			
+			void main() {
+				HIGHP vec4 wp = position0 * world;
+				HIGHP vec4 sp = wp * view_proj;
+				gl_Position = sp;
+				
+				#ifdef TANGENT_SPACE
+					v_uv = vec4((texcoord0 * layer0_normal_tile_size) + time * layer0_normal_tile_scroll_speed, (texcoord0 * layer1_normal_tile_size) + time * layer1_normal_tile_scroll_speed);
+					tspace_transform_transpose(v_tsm0, v_tsm1, v_tsm2, tangent, binormal, normal, mat3(world));
+				#else
+					v_uv = vec4((wp.xy / layer0_normal_tile_size) + time * layer0_normal_tile_scroll_speed, (wp.xy / layer1_normal_tile_size) + time * layer1_normal_tile_scroll_speed);
+				#endif
+				
+				LOWP vec3 view_vector = normalize(camera_pos - wp.xyz);
+				v_neg_sun_dir = -sun_direction;
+				v_h = v_neg_sun_dir + view_vector;
+				vec3 ambient = mix(ambient_top_color, ambient_top_color * (1.0-clamp(dot(view_vector, vec3(0.0,0.0,1.0)), 0.0, 1.0)), ambient_camera_falloff);
+							
+				float fog_span = (fog_depth_range.y - fog_depth_range.x);
+				float fog_dist = clamp(sp.z - fog_depth_range.x, 0.0, fog_span);    
+				float vfog_span = (fog_height_range.y - fog_height_range.x);
+				float vfog_dist = clamp(-wp.z - fog_height_range.x, 0.0, vfog_span);    
+				v_fog_factor = max(fog_dist / fog_span, vfog_dist / vfog_span);
+
+				v_color = ambient + sun_color;
+			}
+		"""
+		
+		fp_code = """
+			PRECISION MEDIUMP float;
+			
+			uniform LOWP vec3 fog_color;
+			
+			uniform sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			uniform LOWP float surface_alpha; // exports={ name="Surface Alpha" type="scalar" value=1.0 min=0 max=1 step=0.001}
+			uniform float surface_spec; // exports={ name="Surface Spec" type="scalar" value=1.0 min=0 max=75 step=0.1}
+			uniform LOWP vec3 surface_albedo; // exports={ name="Surface Color" type="vector3" value=[0.3 0.3 0.8] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001]}
+			
+			varying LOWP float v_fog_factor;
+			varying LOWP vec3 v_neg_sun_dir;
+			varying vec3 v_color;
+			varying vec3 v_h;
+			varying vec4 v_uv;
+			
+			#ifdef TANGENT_SPACE
+				varying vec3 v_tsm0;
+				varying vec3 v_tsm1;
+				varying vec3 v_tsm2;
+				
+				vec3 rotate_vector3(vec3 v, vec3 x, vec3 y, vec3 z) {
+					return normalize(vec3(dot(v, x), dot(v, y), dot(v, z)) );
+				}
+			#endif
+			
+			#define MAX_GLOSSINESS 500.0
+			#define decode_normal_grad(v) (2.0 * ((v).xy - 0.5))
+			#define approx_pow(x, n) (exp2((x) * (n) - (n)))
+						
+			void main() {
+				LOWP vec4 tex = texture2D(normal_map, v_uv.xy);
+				LOWP vec2 normal_grad = decode_normal_grad(tex) + decode_normal_grad(texture2D(normal_map, v_uv.zw));
+				LOWP vec3 normal = normalize(vec3(normal_grad, 1.0));
+				
+				#ifdef TANGENT_SPACE
+					normal = rotate_vector3(normal, v_tsm0, v_tsm1, v_tsm2);
+				#endif
+
+				float s = approx_pow(dot(normalize(v_h), normal), MAX_GLOSSINESS);
+				gl_FragColor = vec4(mix(normal.x + v_color * surface_albedo + s * surface_spec, fog_color, v_fog_factor), surface_alpha + s);
+			}
+		"""
+		
+		code="""
+			sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#ifdef TANGENT_SPACE
+					float3 normal : NORMAL0;
+					float3 tangent : TANGENT;
+					float3 binormal : BINORMAL;
+					float2 uv : TEXCOORD0;
+				#endif
+			};
+						
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float3 h : TEXCOORD0;
+				float4 uv : TEXCOORD1;
+				float3 color : TEXCOORD2;
+				half3 neg_sun_dir : TEXCOORD3;
+				half fog_factor : TEXCOORD4;
+				#ifdef TANGENT_SPACE
+					float3 tsm0 : TEXCOORD5;
+					float3 tsm1 : TEXCOORD6;
+					float3 tsm2 : TEXCOORD7;
+				#endif
+			};
+			
+			CBUFFER_START(c0)
+				float4x4 world;
+				float4x4 view_proj;
+				
+				float3 sun_direction;
+				float3 sun_color;
+				float3 ambient_top_color;
+				float ambient_camera_falloff;
+				float2 fog_depth_range;
+				float2 fog_height_range;
+				float3 fog_color;
+				
+				float3 surface_albedo; // exports={ name="Surface Color" type="vector3" value=[0.3 0.3 0.8] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001]}
+				float surface_alpha; // exports={ name="Surface Alpha" type="scalar" value=1.0 min=0 max=1 step=0.001}
+				float surface_spec; // exports={ name="Surface Spec" type="scalar" value=1.0 min=0 max=50 step=0.1}
+				
+				float2 layer0_normal_tile_size; // exports={ name="Layer 0 Normal Map Tile" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+				float2 layer1_normal_tile_size; // exports={ name="Layer 1 Normal Map Tile" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}	
+				
+				float2 layer0_normal_tile_scroll_speed; // exports={ name="Layer 0 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+				float2 layer1_normal_tile_scroll_speed; // exports={ name="Layer 1 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}			
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				
+				float4 wp = mul(input.position, world);
+				o.position = mul(wp, view_proj);
+				
+				#ifdef TANGENT_SPACE
+					o.uv = float4((input.uv * layer0_normal_tile_size) + time * layer0_normal_tile_scroll_speed, (input.uv * layer1_normal_tile_size) + time * layer1_normal_tile_scroll_speed);
+					tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, input.tangent, input.binormal, input.normal, (float3x3)world);
+				#else
+					o.uv = float4((wp.xy / layer0_normal_tile_size) + time * layer0_normal_tile_scroll_speed, (wp.xy / layer1_normal_tile_size) + time * layer1_normal_tile_scroll_speed);
+				#endif
+				
+				half3 view_vector = normalize(camera_pos - wp);
+				o.neg_sun_dir = -sun_direction;
+				o.h = o.neg_sun_dir + view_vector;
+				half3 ambient = lerp(ambient_top_color, ambient_top_color * (1-saturate(dot(view_vector, half3(0,0,1)))), ambient_camera_falloff);
+				
+				float dfog = saturate((o.position.z - fog_depth_range.x) / (fog_depth_range.y - fog_depth_range.x));
+				float hfog = saturate((-wp.z - fog_height_range.x) / (fog_height_range.y - fog_height_range.x));
+
+				o.fog_factor = max(dfog, hfog);
+				
+				o.color = ambient + sun_color;
+				return o;
+			}
+			
+			#define approx_pow(x, n) (exp2((x) * (n) - (n)))
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				half2 normal_grad = decode_normal_grad(tex2D(normal_map, input.uv.xy)) + decode_normal_grad(tex2D(normal_map, input.uv.zw));
+				half3 normal = normalize(half3(normal_grad, 1));
+				
+				#ifdef TANGENT_SPACE
+					normal = rotate_vector3(normal, input.tsm0, input.tsm1, input.tsm2);
+				#endif
+
+				float s = approx_pow(dot(normalize(input.h), normal), MAX_GLOSSINESS);
+				return float4(lerp(normal.x + input.color * surface_albedo + s * surface_spec, fog_color, input.fog_factor), surface_alpha + s);
+			}
+		"""
+	}
+	
+	mobile_skydome = {
+		includes = [ "common" ]	
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic" }
+			}		
+		}
+		
+		vp_code = """ 
+			PRECISION MEDIUMP float;
+			
+			uniform mat4 world;
+			uniform mat4 view;
+			uniform mat4 proj;
+			
+			attribute vec3 position0;
+			
+			#ifdef DIFFUSE_MAP
+				attribute vec2 texcoord0;
+				varying vec2 diffuse_uv;
+			#endif
+			
+			void main() {
+				HIGHP mat4 v = view;
+				HIGHP vec4 wp = vec4(position0.x, position0.y, position0.z, 1.0) * world;
+			  
+				#ifdef CAMERA_LOCK_XY
+					v[0][3] = 0.0;
+					v[1][3] = 0.0;
+					#ifdef CAMERA_LOCK_Z
+						v[2][3] = 0.0;
+					#endif
+				#endif
+			   
+				wp = wp * v * proj;
+				#ifdef PROJECT_TO_FAR_PLANE
+					wp.z = wp.w;
+				#endif
+				#ifdef DIFFUSE_MAP
+					diffuse_uv = texcoord0;
+				#endif
+				gl_Position = wp;				
+			}
+		"""
+		
+		fp_code = """
+			PRECISION MEDIUMP float;
+			uniform sampler2D diffuse_map;
+			
+			#ifdef DIFFUSE_MAP
+				varying vec2 diffuse_uv;
+			#endif
+			
+			void main() {
+				#ifdef DIFFUSE_MAP				
+					vec4 col = texture2D(diffuse_map, diffuse_uv);
+				#else
+					vec4 col = vec4(0.5, 0.5, 0.5, 1);
+				#endif
+				
+				gl_FragColor = col;
+			}
+		"""
+		
+		code = """
+			#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+				#define HAS_UV
+			#endif		
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#if defined(HAS_UV)
+					float2 vs_default_uv : TEXCOORD0;
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(HAS_UV)
+					float2 diffuse_uv : TEXCOORD0;
+				#endif
+			};
+			
+			CBUFFER_START(c_per_object)
+				#ifdef CAMERA_LOCK_XY
+					float4x4 world;
+					float4x4 view;
+					float4x4 proj;
+				#else			
+					float4x4 world_view_proj;
+				#endif
+			CBUFFER_END	
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" sort_tag="0_DIFFUSE_MAP"}
+			#endif			
+			
+			PS_INPUT vs_main(VS_INPUT input) { 
+				PS_INPUT o; 
+				
+				float4 position = input.position;
+				float4 p;
+				
+				#if defined(CAMERA_LOCK_XY)						
+					float3 wp = mul(position, world);
+					#ifdef CAMERA_LOCK_Z
+						view._m30_m31_m32 = float3(0,0,0);
+					#else
+						view._m30_m31 = float2(0,0);
+					#endif
+					p = mul(mul(float4(wp,1),view), proj);
+				#else
+					p = mul(position, world_view_proj);
+				#endif
+				o.position = p; 
+				
+				#if defined(PROJECT_TO_FAR_PLANE)
+					o.position.z = o.position.w;
+				#endif
+				
+				#ifdef HAS_UV
+					o.diffuse_uv = input.vs_default_uv;
+				#endif			
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {								
+				#if defined(DIFFUSE_MAP)				
+					half4 diffuse = tex2D(diffuse_map, input.diffuse_uv);
+				#else
+					half4 diffuse = half4(0.5f, 0.5f, 0.5f, 1.f);
+				#endif				
+				
+				return diffuse;
+			}					
+		"""
+	}
+	
+	mobile_forward_base = {
+		includes = [ "common", "skinning", "vegetation_bending" ]	
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				//diffuse_map = { sampler_states = "wrap_linear_srgb" }
+				diffuse_map = { sampler_states = "wrap_linear" }
+			}
+			defined_MASKED_VC_BLEND = {
+				blend_diffuse_map = { sampler_states = "wrap_linear" }
+			}
+			defined_SELF_ILLUMINATION_MAP = {
+				self_illumination_map = { sampler_states = "wrap_anisotropic" }
+			}
+		}	
+		
+		vp_code = """
+			PRECISION MEDIUMP float;
+			
+			#ifdef MASKED_VC_TINT_INV
+				#define MASKED_VC_TINT
+			#endif
+			
+			#if defined(SKINNED_1WEIGHT) || defined(SKINNED_2WEIGHTS) || defined(SKINNED_3WEIGHTS) || defined(SKINNED_4WEIGHTS)
+				#define SKINNED
+			#endif
+			
+			#if defined(VEGETATION_BENDING)
+				#define NEEDS_WORLD_SPACE
+			#endif
+			
+			#if defined(VC_TINT_RGB) || defined(MASKED_VC_BLEND) || defined(MASKED_VC_TINT)
+				#define VERTEX_COLOR
+			#endif	
+			
+			#ifdef SKINNED
+				#define MAX_BONES 50
+				uniform HIGHP mat4 bones[MAX_BONES];
+				
+				#if defined(SKINNED_1WEIGHT)
+					#define IndexType LOWP float
+					#define WeightType LOWP float
+
+					vec3 skin_point(vec4 p, IndexType bi, WeightType bw) {
+						mat4 bone = bones[int(bi)];
+						return (p * bone).xyz;
+					}			
+					vec3 skin_vector(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone = bones[int(bi)];
+						return normalize(v * mat3(bone[0].xyz, bone[1].xyz, bone[2].xyz));
+					}
+					vec3 skin_displacement_delta(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone = bones[int(bi)];
+						return v * mat3(bone[0].xyz, bone[1].xyz, bone[2].xyz);
+					}
+				#elif defined(SKINNED_2WEIGHTS)
+					#define IndexType LOWP vec2
+					#define WeightType LOWP vec2
+
+					vec3 skin_point(vec4 p, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						return (bw.x * (p * bone1) + bw.y * (p * bone2)).xyz;
+					}			
+					vec3 skin_vector(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						return normalize( bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz))
+										+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz)));
+					}
+					vec3 skin_displacement_delta(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						return 	  bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz)) 
+								+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz));
+					}										
+				#elif defined(SKINNED_3WEIGHTS) 
+					#define IndexType LOWP vec3
+					#define WeightType LOWP vec3			
+					
+					vec3 skin_point(vec4 p, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						return (bw.x * (p * bone1) + bw.y * (p * bone2) + bw.z * (p * bone3)).xyz;
+					}			
+					vec3 skin_vector(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						return normalize( bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz))
+										+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz))
+										+ bw.z * (v * mat3(bone3[0].xyz, bone3[1].xyz, bone3[2].xyz)));
+					}					
+					vec3 skin_displacement_delta(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						return 	  bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz)) 
+								+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz))
+								+ bw.z * (v * mat3(bone3[0].xyz, bone3[1].xyz, bone3[2].xyz));
+					}					
+				#elif defined(SKINNED_4WEIGHTS)
+					#define IndexType LOWP vec4
+					#define WeightType LOWP vec4
+					
+					vec3 skin_point(vec4 p, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						mat4 bone4 = bones[int(bi.w)];
+						return (bw.x * (p * bone1) + bw.y * (p * bone2) + bw.z * (p * bone3) + bw.w * (p * bone4)).xyz;
+					}			
+					vec3 skin_vector(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						mat4 bone4 = bones[int(bi.w)];
+						return normalize( bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz))
+										+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz))
+										+ bw.z * (v * mat3(bone3[0].xyz, bone3[1].xyz, bone3[2].xyz))
+										+ bw.w * (v * mat3(bone4[0].xyz, bone4[1].xyz, bone4[2].xyz)));
+					}					
+					vec3 skin_displacement_delta(vec3 v, IndexType bi, WeightType bw) {
+						mat4 bone1 = bones[int(bi.x)];
+						mat4 bone2 = bones[int(bi.y)];
+						mat4 bone3 = bones[int(bi.z)];
+						mat4 bone4 = bones[int(bi.w)];
+						return 	  bw.x * (v * mat3(bone1[0].xyz, bone1[1].xyz, bone1[2].xyz)) 
+								+ bw.y * (v * mat3(bone2[0].xyz, bone2[1].xyz, bone2[2].xyz))
+								+ bw.z * (v * mat3(bone3[0].xyz, bone3[1].xyz, bone3[2].xyz))
+								+ bw.z * (v * mat3(bone4[0].xyz, bone4[1].xyz, bone4[2].xyz));
+					}						
+				#endif
+			#endif
+			
+			#if defined(VEGETATION_BENDING)
+				// Vegetation vertex animation (based on GPUGems 3 chapter by Tiago Sousa / Crytek)
+				uniform float speed; // exports = { name="Vegetation Speed" type="scalar" value=0.5 min=0.0 max=10 step=0.001 }				
+				uniform vec2 branch_settings; // exports = { name="Branch Bending Amplitude / Frequency" type="vector2" min=[0 0] max=[10 2] step=[0.01 0.001] value=[0.3 0.1] }
+				uniform vec2 detail_settings; // exports = { name="Detail Bending Amplitude / Frequency" type="vector2" min=[0 0] max=[1 5] step=[0.001 0.001] value=[0.05 0.5] }
+				uniform HIGHP float time;
+				// sine waves approximation by smoothing a number of triangle waves using bicubic interpolation.
+				vec4 smooth_curve( vec4 x ) {
+					return x * x * (3.0 - 2.0 * x);
+				}
+				
+				vec4 triangle_wave( vec4 x ) {
+					return abs(fract(x + 0.5) * 2.0 - 1.0);
+				}
+				
+				vec4 smooth_triangle_wave( vec4 x ) {
+					return smooth_curve(triangle_wave(x));
+				}				
+				
+				vec4 vegetation_bending(vec3 opos, vec4 wpos, LOWP vec3 vnormal, vec4 vdata, vec4 vpos) {
+					const vec4 freq = vec4(1.975, 0.793, 0.375, 0.193);
+									
+					float detail_amp = detail_settings.x;
+					float detail_freq = detail_settings.y;
+					
+					float branch_amp = branch_settings.x;
+					float branch_freq = branch_settings.y;				
+					
+					float edge_attenuation = vdata.x * vdata.z;
+					float branch_phase = vdata.y * 2.0 - 1.0;
+					float branch_attenuation = vdata.z;
+				
+					float obj_phase = dot(opos, vec3(1.0, 1.0, 1.0));					
+					//float detail_phase = branch_phase;
+					//branch_phase += obj_phase;
+					float detail_phase = dot(vpos.xyz, vec3(branch_phase, branch_phase, branch_phase));
+					
+					vec2 waves_in = time + vec2(detail_phase, branch_phase);
+					
+					vec4 waves = (fract(waves_in.xyxy * freq * vec2(detail_freq, branch_freq).xyxy * speed) * 2.0 - 1.0);				
+					waves = smooth_triangle_wave(waves);
+					
+					vec2 waves_sum = (waves.xz + waves.yw);
+					return vec4(wpos.xyz + waves_sum.xxy * vec3(edge_attenuation * detail_amp * vnormal.xy, branch_attenuation * branch_amp), wpos.w);
+				}
+			#endif
+			
+			uniform HIGHP mat4 lights[4];
+			/*
+			LOWP vec3 calc_obj_light(LOWP vec3 wn, HIGHP vec3 wp) {
+				HIGHP vec3 lpos_0 = lights[0][0].xyz;
+				LOWP vec3 ldir_0 = lights[0][1].xyz;
+				LOWP vec3 lcol_0 = lights[0][2].xyz;
+				MEDIUMP vec4 lfalloff = lights[0][3];
+				
+				HIGHP vec3 lpos_1 = lights[1][0].xyz;
+				LOWP vec3 ldir_1 = lights[1][1].xyz;
+				LOWP vec3 lcol_1 = lights[1][2].xyz;
+				MEDIUMP vec4 lspotfalloff = lights[1][3];
+				
+				HIGHP vec3 lpos_2 = lights[2][0].xyz;
+				LOWP vec3 ldir_2 = lights[2][1].xyz;
+				LOWP vec3 lcol_2 = lights[2][2].xyz;
+				LOWP vec4 ltype = lights[2][3];
+				
+				HIGHP vec3 lpos_3 = lights[3][0].xyz;
+				LOWP vec3 ldir_3 = lights[3][1].xyz;
+				LOWP vec3 lcol_3 = lights[3][2].xyz;
+				
+				HIGHP vec3 light_dir_0 = lpos_0 - wp;
+				HIGHP vec3 light_dir_1 = lpos_1 - wp;
+				HIGHP vec3 light_dir_2 = lpos_2 - wp;
+				HIGHP vec3 light_dir_3 = lpos_3 - wp;
+				
+				MEDIUMP vec4 l = vec4(length(light_dir_0), length(light_dir_1), length(light_dir_2), length(light_dir_3)) + 0.00001; 
+				
+				const vec4 zero = vec4(0.0,0.0,0.0,0.0);
+				const vec4 one = vec4(1.0,1.0,1.0,1.0);
+				
+				LOWP vec4 attn = one-clamp(l*lfalloff, zero, one);
+				
+				LOWP vec3 light_vector_0 = light_dir_0 / l.x;
+				LOWP vec3 light_vector_1 = light_dir_1 / l.y;
+				LOWP vec3 light_vector_2 = light_dir_2 / l.z;
+				LOWP vec3 light_vector_3 = light_dir_3 / l.w;
+				
+				LOWP vec4 spot_angle = one - vec4(dot(light_vector_0, -ldir_0), dot(light_vector_1, -ldir_1), dot(light_vector_2, -ldir_2), dot(light_vector_3, -ldir_3));
+				attn *= one - clamp(spot_angle*lspotfalloff, zero, one) * ltype;
+				LOWP vec4 latt = attn * clamp(vec4(dot(light_vector_0, wn), dot(light_vector_1, wn), dot(light_vector_2, wn), dot(light_vector_3, wn)), zero, one);
+				return lcol_0 * latt.x + lcol_1 * latt.y + lcol_2 * latt.z + lcol_3 * latt.w;
+			}
+			*/
+			LOWP vec3 calc_obj_light(LOWP vec3 wn, HIGHP vec3 wp) {				
+				#if defined(LIGHT0)
+					HIGHP vec3 lpos_0 = lights[0][0].xyz;
+					LOWP vec3 ldir_0 = lights[0][1].xyz;
+					LOWP vec3 lcol_0 = lights[0][2].xyz;
+					HIGHP vec3 light_dir_0 = lpos_0 - wp;
+				#else
+					return vec3(0.0, 0.0, 0.0);
+				#endif
+
+				MEDIUMP vec4 lfalloff = lights[0][3];
+
+				#if defined(LIGHT1)
+					HIGHP vec3 lpos_1 = lights[1][0].xyz;
+					LOWP vec3 ldir_1 = lights[1][1].xyz;
+					LOWP vec3 lcol_1 = lights[1][2].xyz;
+					HIGHP vec3 light_dir_1 = lpos_1 - wp;
+				#endif
+
+				MEDIUMP vec4 lspotfalloff = lights[1][3];
+
+				#if defined(LIGHT2)
+					HIGHP vec3 lpos_2 = lights[2][0].xyz;
+					LOWP vec3 ldir_2 = lights[2][1].xyz;
+					LOWP vec3 lcol_2 = lights[2][2].xyz;
+					HIGHP vec3 light_dir_2 = lpos_2 - wp;
+				#endif
+
+				LOWP vec4 ltype = lights[2][3];
+
+				#if defined(LIGHT3)
+					HIGHP vec3 lpos_3 = lights[3][0].xyz;
+					LOWP vec3 ldir_3 = lights[3][1].xyz;
+					LOWP vec3 lcol_3 = lights[3][2].xyz;
+					HIGHP vec3 light_dir_3 = lpos_3 - wp;
+				#endif
+				
+				#if defined(LIGHT0) && defined(LIGHT1) && defined(LIGHT2) && defined(LIGHT3)
+					const vec4 zero = vec4(0.0,0.0,0.0,0.0);
+					const vec4 one = vec4(1.0,1.0,1.0,1.0);
+					
+					MEDIUMP vec4 l = vec4(length(light_dir_0), length(light_dir_1), length(light_dir_2), length(light_dir_3)) + 0.00001; 
+					LOWP vec4 attn = one-clamp(l*lfalloff, zero, one);			
+
+					LOWP vec3 light_vector_0 = light_dir_0 / l.x;
+					LOWP vec3 light_vector_1 = light_dir_1 / l.y;
+					LOWP vec3 light_vector_2 = light_dir_2 / l.z;
+					LOWP vec3 light_vector_3 = light_dir_3 / l.w;
+					
+					LOWP vec4 spot_angle = one - vec4(dot(light_vector_0, -ldir_0), dot(light_vector_1, -ldir_1), dot(light_vector_2, -ldir_2), dot(light_vector_3, -ldir_3));
+					attn *= one - clamp(spot_angle*lspotfalloff, zero, one) * ltype;
+					LOWP vec4 latt = attn * clamp(vec4(dot(light_vector_0, wn), dot(light_vector_1, wn), dot(light_vector_2, wn), dot(light_vector_3, wn)), zero, one);
+					return lcol_0 * latt.x + lcol_1 * latt.y + lcol_2 * latt.z + lcol_3 * latt.w;
+				#elif defined(LIGHT0) && defined(LIGHT1) && defined(LIGHT2)
+					const vec3 zero = vec3(0.0,0.0,0.0);
+					const vec3 one = vec3(1.0,1.0,1.0);
+					
+					MEDIUMP vec3 l = vec3(length(light_dir_0), length(light_dir_1), length(light_dir_2)) + 0.00001; 
+					LOWP vec3 attn = one-clamp(l*lfalloff.xyz, zero, one);			
+
+					LOWP vec3 light_vector_0 = light_dir_0 / l.x;
+					LOWP vec3 light_vector_1 = light_dir_1 / l.y;
+					LOWP vec3 light_vector_2 = light_dir_2 / l.z;
+					
+					LOWP vec3 spot_angle = one - vec3(dot(light_vector_0, -ldir_0), dot(light_vector_1, -ldir_1), dot(light_vector_2, -ldir_2));
+					attn *= one - clamp(spot_angle*lspotfalloff.xyz, zero, one) * ltype.xyz;
+					LOWP vec3 latt = attn * clamp(vec3(dot(light_vector_0, wn), dot(light_vector_1, wn), dot(light_vector_2, wn)), zero, one);
+					return lcol_0 * latt.x + lcol_1 * latt.y + lcol_2 * latt.z;
+				#elif defined(LIGHT0) && defined(LIGHT1)
+					const vec2 zero = vec2(0.0,0.0);
+					const vec2 one = vec2(1.0,1.0);
+					
+					MEDIUMP vec2 l = vec2(length(light_dir_0), length(light_dir_1)) + 0.00001; 
+					LOWP vec2 attn = one-clamp(l*lfalloff.xy, zero, one);			
+
+					LOWP vec3 light_vector_0 = light_dir_0 / l.x;
+					LOWP vec3 light_vector_1 = light_dir_1 / l.y;
+					
+					LOWP vec2 spot_angle = one - vec2(dot(light_vector_0, -ldir_0), dot(light_vector_1, -ldir_1));
+					attn *= one - clamp(spot_angle*lspotfalloff.xy, zero, one) * ltype.xy;
+					LOWP vec2 latt = attn * clamp(vec2(dot(light_vector_0, wn), dot(light_vector_1, wn)), zero, one);
+					return lcol_0 * latt.x + lcol_1 * latt.y;
+				#elif defined(LIGHT0)
+					const float zero = 0.0;
+					const float one = 1.0;
+					
+					MEDIUMP float l = length(light_dir_0) + 0.00001;
+					LOWP float attn = one-clamp(l*lfalloff.x, zero, one);
+					LOWP vec3 light_vector_0 = light_dir_0 / l;					
+					
+					LOWP float spot_angle = one - dot(light_vector_0, -ldir_0);
+					attn *= one - clamp(spot_angle*lspotfalloff.x, zero, one) * ltype.x;
+					LOWP float latt = attn * clamp(dot(light_vector_0, wn), zero, one);
+					return lcol_0 * latt;
+				#endif
+			}
+			
+			#define MAX_GLOSSINESS 500.0
+			
+			uniform HIGHP mat4 world;
+			uniform HIGHP mat4 view_proj;
+			uniform LOWP vec3 sun_direction;
+			uniform LOWP vec3 sun_color;
+			uniform LOWP vec3 ambient_top_color;
+			uniform LOWP vec3 ambient_bottom_color;
+			uniform HIGHP vec3 camera_pos;
+			uniform LOWP float ambient_camera_falloff;
+			uniform HIGHP vec2 fog_depth_range;			
+			uniform HIGHP vec2 fog_height_range;
+			
+			attribute vec4 position0;
+			
+			#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+				attribute vec2 texcoord0;
+				varying vec2 v_texcoord;
+			#endif
+			
+			attribute vec3 normal;
+			#ifdef SKINNED
+				attribute IndexType blendindices;
+				attribute WeightType blendweights;
+			#endif
+			#ifdef BAKED_VERTEX_AMBIENT_OCCLUSION
+				attribute LOWP vec4 color1;
+			#endif
+			#ifdef VERTEX_COLOR
+				attribute LOWP vec4 color0;
+				varying LOWP vec4 v_color0;
+			#elif defined(VEGETATION_BENDING)
+				attribute LOWP vec4 color0;
+			#endif
+			#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+				attribute vec2 texcoord2;
+				varying vec2 v_self_illumination_uv;
+			#endif
+			
+			varying LOWP vec3 v_diffuse_light;
+			varying LOWP vec3 v_specular_light;
+			varying vec4 v_position;
+			varying LOWP float v_fog_factor;			
+			
+			void main() {
+				#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+					v_texcoord = texcoord0;
+				#endif
+				v_position = position0;
+				
+				#ifdef VERTEX_COLOR
+					v_color0 = color0.bgra;
+				#endif
+				
+				HIGHP vec4 pos;
+				LOWP vec3 norm;
+				
+				#ifdef SKINNED					
+					pos = vec4(skin_point(position0, blendindices, blendweights), 1.0);								
+					norm = skin_vector(normal, blendindices, blendweights);
+				#else
+					pos = position0;
+					norm = normal;	
+				#endif
+
+				#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+					v_self_illumination_uv = texcoord2;
+				#endif
+				
+				HIGHP vec4 sp;
+				HIGHP vec4 wp = pos * world;
+				
+				#ifndef FOG_COLOR_ONLY
+					LOWP vec3 wn = norm * mat3(world[0].xyz, world[1].xyz, world[2].xyz);
+					LOWP vec3 view_vector = normalize(camera_pos - wp.xyz);
+					
+					#if defined(VEGETATION_BENDING)
+						vec3 op = vec3(world[3][0], world[3][1], world[3][2]);
+						wp = vegetation_bending(op, wp, wn, color0, pos); //TODO: decode_vertex_color(input.color);
+					#endif
+
+					sp = wp * view_proj;
+					
+					#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+						vec4 sun_occlusion_ao = color1.bgra;
+					#else
+						vec4 sun_occlusion_ao = vec4(1,1,1,1);
+					#endif				
+				
+					v_diffuse_light = clamp(dot(wn, -sun_direction), 0.0, 1.0) * sun_color * sun_occlusion_ao.y;								
+					
+					LOWP vec3 h = normalize(-sun_direction + view_vector);
+					v_specular_light = v_diffuse_light * pow(clamp(dot(h,wn), 0.0, 1.0), 0.4 * MAX_GLOSSINESS);
+					
+					LOWP vec3 ambient = sun_occlusion_ao.x * mix(ambient_bottom_color, ambient_top_color, wn.z*0.5+0.5);				
+					v_diffuse_light += mix(ambient, ambient * (1.0-clamp(dot(view_vector, wn), 0.0, 1.0)), ambient_camera_falloff);
+					
+					#ifndef DISABLE_VTX_LIGHTNING
+						v_diffuse_light += calc_obj_light(wn, wp.xyz);
+					#endif
+
+					float fog_span = (fog_depth_range.y - fog_depth_range.x);
+					float fog_dist = clamp(sp.z - fog_depth_range.x, 0.0, fog_span);    
+					float vfog_span = (fog_height_range.y - fog_height_range.x);
+					float vfog_dist = clamp(-wp.z - fog_height_range.x, 0.0, vfog_span);    
+					v_fog_factor = max(fog_dist / fog_span, vfog_dist / vfog_span);
+				#else
+					sp = wp * view_proj;
+				#endif
+				
+				gl_Position =  sp;
+			}
+		
+		"""
+		
+		fp_code = """
+			PRECISION MEDIUMP float;
+			#ifdef MASKED_VC_TINT_INV
+				#define MASKED_VC_TINT
+			#endif
+			
+			#if defined(VC_TINT_RGB) || defined(MASKED_VC_BLEND) || defined(MASKED_VC_TINT)
+				#define VERTEX_COLOR
+			#endif
+			
+			#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+				varying vec2 v_texcoord;
+			#endif
+			
+			#if defined(DIFFUSE_MAP)
+				uniform sampler2D diffuse_map;
+			#endif
+			
+			#ifdef MASKED_VC_TINT
+				uniform LOWP float masked_blend_alpha_mul; // exports={ name="Masked Blend Alpha" type="scalar" value=1.0 min=0.0 max=2.0 step=0.01 }
+				uniform LOWP vec3 masked_blend_color; // exports={ name="Masked Blend Color" type="vector3" value=[0.0 0.0 1.0] min=[0 0 0] max=[2 2 2] step=[0.001 0.001 0.001]}
+			#endif
+
+			#if defined(MATERIAL_TINT_RGB) || defined(MATERIAL_TINT_RGB_MASKED)
+				uniform LOWP vec3 tint_rgb; // exports={ name="Material Tint Color (x2)" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+			#endif			
+			
+			#if defined(SELF_ILLUMINATION_MAP)
+				uniform float self_illumination_multiplier; // exports={ name="Self Illumination Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.01	}
+				uniform sampler2D self_illumination_map; // exports={ name="Self Illumination Map" type="resource" sort_tag="5_SELF_ILLUMINATION" }
+			#endif
+			
+			#ifdef MASKED_VC_BLEND
+				uniform LOWP float masked_blend_smoothing; // exports={ name="Masked Blend Smoothing" type="scalar" value=0.2 min=0.001 max=1.0 step=0.001 sort_tag="3_MASKED_VC_BLEND4" }
+				uniform sampler2D blend_diffuse_map;
+			#endif		
+			
+			#ifdef SEMI_TRANSPARENCY_RESOLVE
+				//vec2 back_buffer_size;
+				uniform LOWP float transparency; // exports={ name="Transparency" type="scalar" value=0.5 min=0.0 max=1 step=0.001 }
+			#endif
+			
+			#ifdef ONE_BIT_ALPHA
+				#define ONE_BIT_ALPHA_REF 0.5
+				#if defined(EXTERNAL_ALPHA_REF)
+					uniform LOWP float external_alpha_ref; // exports={ name="Alpha Mask Clip" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }
+				#endif
+			#endif
+			
+			varying LOWP vec3 v_diffuse_light;
+			varying LOWP vec3 v_specular_light;
+			varying vec4 v_position;
+			varying LOWP float v_fog_factor;			
+			
+			uniform LOWP vec3 fog_color;
+			
+			#ifdef VERTEX_COLOR
+				varying LOWP vec4 v_color0;
+			#endif
+
+			#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+				varying vec2 v_self_illumination_uv;
+			#endif
+			
+			void main() {				
+				#ifdef DIFFUSE_MAP				
+					LOWP vec4 col = texture2D(diffuse_map, v_texcoord);
+				#else
+					LOWP vec4 col = vec4(0.5, 0.5, 0.5, 1.0);
+				#endif
+								
+				#ifdef ONE_BIT_ALPHA
+					#if defined(EXTERNAL_ALPHA_REF)
+						if (col.a < external_alpha_ref)
+							discard;
+					#else
+						if (col.a < ONE_BIT_ALPHA_REF)
+							discard;
+					#endif
+				#endif
+
+				#if defined(MATERIAL_TINT_RGB)
+					col.rgb *= tint_rgb * 2.0;
+				#endif
+				
+				#ifdef SELF_ILLUMINATION_MAP
+					#ifdef SELF_ILLUMINATION_MAP_UNIQUE_UV
+						LOWP vec3 il = texture2D(self_illumination_map, v_self_illumination_uv).xyz;
+					#else
+						LOWP vec3 il = texture2D(self_illumination_map, v_texcoord).xyz;
+					#endif
+				#endif
+				
+				#ifndef FOG_COLOR_ONLY
+					#ifdef VERTEX_COLOR
+						#if defined(VC_TINT_RGB)
+							col.rgb *= v_color0.rgb;
+						#endif
+						#if defined(MASKED_VC_BLEND)
+							LOWP float first_layer_blend = smoothstep(clamp(col.a - masked_blend_smoothing, 0.0, 1.0), col.a, v_color0.a);
+							col = mix(col, texture2D(blend_diffuse_map, v_texcoord), first_layer_blend);
+						#endif
+						#if defined(MASKED_VC_TINT)
+							#ifdef MASKED_VC_TINT_INV
+								LOWP float vtx_col_a = 1.0 - v_color0.a;
+							#else
+								LOWP float vtx_col_a = v_color0.a;
+							#endif
+							LOWP float first_layer_blend2 = vtx_col_a * masked_blend_alpha_mul > col.a ? 1.0 : 0.0;
+							col = vec4(mix(col.rgb, col.aaa + masked_blend_color, first_layer_blend2), 1.0);
+						#endif
+					#endif
+					
+					#ifdef SEMI_TRANSPARENCY_RESOLVE
+						col.a *= transparency;
+					#endif
+		
+					const LOWP vec3 luminance_vector = vec3(0.2127, 0.7152, 0.0721);
+					LOWP float specular_mask = col.y; //dot(col.xyz, luminance_vector);
+
+					#ifdef SELF_ILLUMINATION_MAP
+						#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+							il.rgb *= tint_rgb;
+						#endif
+						col = vec4((v_diffuse_light + il * self_illumination_multiplier) * col.xyz + v_specular_light * specular_mask, col.a);
+					#else
+						col = vec4(v_diffuse_light * col.xyz + v_specular_light * specular_mask, col.a);
+					#endif
+
+					LOWP vec4 fog = vec4(fog_color.r, fog_color.g, fog_color.b, 1.0);
+
+					gl_FragColor = mix(col, fog, v_fog_factor);
+					/*
+					//Debug visualize light culling.
+					#if defined(LIGHT0) && defined(LIGHT1) && defined(LIGHT2) && defined(LIGHT3)
+						gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+					#elif defined(LIGHT0) && defined(LIGHT1) && defined(LIGHT2)
+						gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+					#elif defined(LIGHT0) && defined(LIGHT1)
+						gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+					#elif defined(LIGHT0)
+						gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+					#else
+						gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+					#endif
+					*/
+				#else
+					gl_FragColor = vec4(fog_color.r, fog_color.g, fog_color.b, 1.0);
+				#endif
+			}
+		"""
+		code = """
+			#ifdef MASKED_VC_TINT_INV
+				#define MASKED_VC_TINT
+			#endif
+		
+			#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+				#define HAS_UV
+			#endif		
+			#if defined(MASKED_VC_BLEND) || defined(VC_TINT_RGB) || defined(CLOTH_SHADING_VC_MASK) || defined(MASKED_VC_TINT)
+				#define VERTEX_COLOR
+			#endif			
+			
+			#define NEEDS_WORLD_SPACE			
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float3 normal : NORMAL0;
+				SKIN_INPUT				
+				#if defined(VERTEX_COLOR) || defined(VEGETATION_BENDING)
+					float4 color : COLOR0;
+				#endif
+				
+				#if defined(HAS_UV)
+					float2 vs_default_uv : TEXCOORD0;
+
+					#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+						float2 vs_self_illumination_uv : TEXCOORD2;
+					#else
+						#define vs_self_illumination_uv vs_default_uv
+					#endif
+				#endif
+
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					float4 baked_ambient_occlusion : COLOR1;
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float3 diffuse_light : TEXCOORD3;
+				float3 specular_light : TEXCOORD4;
+				float fog_factor : TEXCOORD1;
+
+				#if defined(HAS_UV)
+					float2 diffuse_uv : TEXCOORD0;
+
+					#if defined(SELF_ILLUMINATION_MAP)
+						float2 self_illumination_uv : TEXCOORD2;
+					#endif
+				#endif
+
+
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif	
+			};
+			
+			CBUFFER_START(c_per_object)
+				#if defined(NEEDS_WORLD_SPACE)
+					float4x4 view_proj;
+				#else
+					float4x4 world_view_proj;
+				#endif				
+				float4x4 world;
+				
+				float4x4 lights[4];
+								
+				float3 sun_direction;
+				float3 sun_color;
+				float3 ambient_bottom_color;
+				float3 ambient_top_color;
+				float ambient_camera_falloff;
+				float2 fog_depth_range;
+				float2 fog_height_range;
+				float3 fog_color;
+				float glossiness; // exports={ name="Glossiness Amount" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 sort_tag="1_MATERIAL_MAP_0" }
+				#if defined(ONE_BIT_ALPHA) && defined(EXTERNAL_ALPHA_REF)
+					float external_alpha_ref; // exports={ name="Alpha Mask Clip" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }
+				#endif
+				#ifdef MASKED_VC_TINT
+					float masked_blend_alpha_mul; // exports={ name="Masked Blend Alpha" type="scalar" value=1.0 min=0.0 max=2.0 step=0.01 }
+					float3 masked_blend_color; // exports={ name="Masked Blend Color" type="vector3" value=[0.0 0.0 1.0] min=[0 0 0] max=[2 2 2] step=[0.001 0.001 0.001]}
+				#endif
+				#ifdef MASKED_VC_BLEND
+					float masked_blend_smoothing; // exports={ name="Masked Blend Smoothing" type="scalar" value=0.2 min=0.001 max=1.0 step=0.001 sort_tag="3_MASKED_VC_BLEND4" }
+				#endif
+				#if defined(MATERIAL_TINT_RGB) || defined(MATERIAL_TINT_RGB_MASKED)
+					float3 tint_rgb; // exports={ name="Material Tint Color (x2)" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+				#endif
+				#if defined(SELF_ILLUMINATION_MAP)
+					float self_illumination_multiplier; // exports={ name="Self Illumination Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.01	}
+				#endif
+				float4 dev_wireframe_color;				
+			CBUFFER_END	
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" sort_tag="0_DIFFUSE_MAP"}
+			#endif			
+			
+			#if defined(MASKED_VC_BLEND)
+				sampler2D blend_diffuse_map; // exports={ name="Blend Diffuse Map" type="resource" sort_tag="3_MASKED_VC_BLEND0" }
+			#endif
+
+			#if defined(SELF_ILLUMINATION_MAP)				
+				sampler2D self_illumination_map; // exports={ name="Self Illumination Map" type="resource" sort_tag="5_SELF_ILLUMINATION" }
+			#endif
+			
+			inline float3 calc_obj_light(int idx, float3 wn, float3 wp) {
+				float3 lpos = lights[idx]._m00_m01_m02;
+				int ltype = (int)lights[idx]._m03;
+				float3 ldir = lights[idx]._m10_m11_m12;
+				float2 lspotfalloff = lights[idx]._m13_m23;
+				float3 lfalloff = lights[idx]._m20_m21_m22;
+				float3 lcol = lights[idx]._m30_m31_m32;
+				
+				float3 light_vector = lpos - wp;						
+				float l = length(light_vector) + 0.00001;
+				float attn = (l > lfalloff.x ? 1-saturate((l-lfalloff.x)*lfalloff.y) : 1);
+				
+				light_vector /= l;
+				if (ltype == 1) { // SPOT
+					float spot_angle = 1-dot(light_vector, -ldir);
+					attn *= (spot_angle > lspotfalloff.x ? 1-saturate((spot_angle-lspotfalloff.x)*lspotfalloff.y) : 1);								
+				} 
+				
+				float light = saturate(dot(normalize(light_vector), normalize(wn)));
+				return lcol * light * attn;
+			}
+						
+			PS_INPUT vs_main(VS_INPUT input) { 
+				PS_INPUT o; 
+				
+				float4 position;
+				float3 normal;
+				
+				#ifdef SKINNED					
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);										
+					normal = skin_vector(input.normal, input.blendindices, input.blendweights);
+				#else
+					position = input.position;					
+					normal = input.normal;
+				#endif				
+				
+				float4 p;
+				#if defined(NEEDS_WORLD_SPACE)				
+					float4 wp = mul(position, world);
+					#if defined(VEGETATION_BENDING)
+						float3 op = world._m30_m31_m32;
+						float3 wnormal = mul(normal, (float3x3)world);						
+						wp = vegetation_bending(op, wp, wnormal, input.color, input.position); //TODO: decode_vertex_color(input.color);
+					#endif
+					p = mul(wp, view_proj);					
+				#else
+					#if defined(BRUSH_INSTANCED) && defined(D3D11)
+						position = mul(position, world);
+					#endif				
+					p = mul(position, world_view_proj);
+				#endif				
+				
+				#ifdef HAS_UV
+					o.diffuse_uv = input.vs_default_uv;
+
+					#ifdef SELF_ILLUMINATION_MAP
+						o.self_illumination_uv = input.vs_self_illumination_uv;
+					#endif
+				#endif				
+				
+				#ifdef VERTEX_COLOR
+					// TODO: color remapping needed when vertex compression in place. 
+					#ifdef VC_COMPRESSED
+						o.color = decode_vertex_color(input.color);
+					#else
+						o.color = input.color;
+					#endif					
+				#endif				
+				
+				o.position = p; 
+				
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					half2 sun_occlusion_ao = input.baked_ambient_occlusion.xz;
+				#else
+					half2 sun_occlusion_ao = half2(1,1);
+				#endif
+				
+				half3 wn = mul(normal, (float3x3)world);
+				half3 view_vector = normalize(camera_pos - wp);
+				
+				half sun_a = saturate(dot(wn, -sun_direction));
+				half3 diffuse_light = sun_a * sun_color * sun_occlusion_ao.x;				
+				half3 h = normalize(-sun_direction + view_vector);
+				o.specular_light = diffuse_light * pow(saturate(dot(h,wn)), 0.4 * MAX_GLOSSINESS);
+				
+				half3 ambient = sun_occlusion_ao.y * lerp(ambient_bottom_color, ambient_top_color, wn.z * 0.5 + 0.5);				
+				diffuse_light += lerp(ambient, ambient * (1-saturate(dot(view_vector, wn))), ambient_camera_falloff);								
+				o.diffuse_light = diffuse_light;
+				
+				#ifndef DISABLE_VTX_LIGHTNING
+					o.diffuse_light += calc_obj_light(0, wn, wp.xyz);
+					o.diffuse_light += calc_obj_light(1, wn, wp.xyz);
+					o.diffuse_light += calc_obj_light(2, wn, wp.xyz);
+					o.diffuse_light += calc_obj_light(3, wn, wp.xyz);
+				#endif
+			
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					//o.diffuse_light = input.baked_ambient_occlusion.xyz;
+				#endif
+				float dfog = saturate((p.z - fog_depth_range.x) / (fog_depth_range.y - fog_depth_range.x));
+				float hfog = saturate((-wp.z - fog_height_range.x) / (fog_height_range.y - fog_height_range.x));			
+				
+				o.fog_factor = max(dfog, hfog);
+				
+				return o;
+			}			
+			
+			#ifdef DRAW_WIREFRAME
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					return dev_wireframe_color;					
+				}			
+			#else						
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {								
+					//#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					//	return float4(input.diffuse_light,1);
+					//#endif
+					
+					#if defined(DIFFUSE_MAP)				
+						half4 diffuse = tex2D(diffuse_map, input.diffuse_uv);
+					#else
+						half4 diffuse = half4(0.5f, 0.5f, 0.5f, 1.f);
+					#endif
+					
+					#if defined(MATERIAL_TINT_RGB)
+						diffuse.rgb *= tint_rgb * 2;
+					#endif
+					
+					#ifdef VERTEX_COLOR
+						#if defined(VC_TINT_RGB)
+							diffuse.rgb *= input.color.rgb;
+						#endif
+						#if defined(MASKED_VC_BLEND)						
+							half first_layer_blend = smoothstep(saturate(diffuse.a - masked_blend_smoothing), diffuse.a, input.color.a);
+							diffuse = lerp(diffuse, tex2D(blend_diffuse_map, input.diffuse_uv), first_layer_blend);
+						#endif
+						#if defined(MASKED_VC_TINT)
+							#ifdef MASKED_VC_TINT_INV
+								half vtx_col_a = 1.0f - input.color.a;
+							#else
+								half vtx_col_a = input.color.a;
+							#endif
+							half first_layer_blend2 = vtx_col_a * masked_blend_alpha_mul > diffuse.a ? 1.0f : 0.0f;
+							diffuse = float4(lerp(diffuse, diffuse.aaa + masked_blend_color, first_layer_blend2), 1.0f);
+						#endif
+					#endif
+					
+					#if defined(ONE_BIT_ALPHA)
+						#if defined(EXTERNAL_ALPHA_REF)
+							half alpha_ref = external_alpha_ref;
+						#else
+							half alpha_ref = ONE_BIT_ALPHA_REF;
+						#endif
+						one_bit_alpha_mask(diffuse.a, alpha_ref);
+					#endif
+
+					float3 diffuse_light = input.diffuse_light;
+					#ifdef SELF_ILLUMINATION_MAP
+						float3 il = tex2D(self_illumination_map, input.self_illumination_uv).xyz;
+						#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+							il.rgb *= tint_rgb;
+						#endif
+						diffuse_light += il * self_illumination_multiplier;
+					#endif
+					
+					static const half3 luminance_vector = half3(0.2127, 0.7152, 0.0721);
+					half specular_mask = diffuse.g; //dot(diffuse.rgb, luminance_vector);
+					half4 o = half4(lerp(diffuse.rgb * diffuse_light + input.specular_light * specular_mask, fog_color, input.fog_factor), diffuse.a);
+										
+					#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					//	o.rgb = input.diffuse_light;
+					#endif
+					#ifdef FOG_COLOR_ONLY
+						o = float4(fog_color, 1.0f);
+					#endif
+					
+					return o;
+				}			
+			#endif
+		"""
+	}
+	
+	mobile_billboard = {
+		includes = [ "common",  "gbuffer_access", "fog" ]
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_linear" }
+			}
+		}	
+		
+		vp_code = """
+			PRECISION MEDIUMP float;
+			
+			#ifdef DIFFUSE_MAP
+				#define UV0
+			#endif
+			
+			uniform HIGHP mat4 view;
+			uniform HIGHP mat4 view_proj;
+			#ifdef UV_ANIMATION
+				uniform vec2 animation_frame_size; // exports={ name="Frame Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[1 1] step=[0.000244140625 0.000244140625]}
+			#endif
+			uniform HIGHP vec3 camera_pos;
+			
+			#ifdef BLEND_ADDITIVE
+				uniform LOWP float emissive_particle_intensity;
+			#endif
+			
+			attribute vec4 position0;
+			attribute vec2 position1;
+			attribute vec2 texcoord6; // exports={ name="Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[10 10] step=[0.01 0.01] }			
+			#if defined(VERTEX_COLOR)
+				attribute vec4 color0;
+				varying LOWP vec4 v_color0;				
+			#endif
+			#if defined(ROTATION)
+				attribute float texcoord1; // rotation
+			#endif
+			#if defined(UV_ANIMATION)
+				attribute float texcoord0; // frame
+			#endif
+			#if defined(PIVOT)
+				attribute vec2 texcoord5; // pivot
+			#endif
+			#if defined(EXTERNAL_ROTATION) || defined(TANGENT_LOCKED)
+				attribute vec3 tangent;
+				#if defined(EXTERNAL_ROTATION)
+					attribute vec3 binormal;
+				#endif
+			#endif
+						
+			#if defined(UV0)
+				varying vec2 v_texcoord;
+			#endif
+			
+			vec4 fast_gamma_to_linear(vec4 c) {
+				return c * c;
+			}
+
+			void main() {
+				#if defined(EXTERNAL_ROTATION)
+					vec3 y = tangent;
+					vec3 x = binormal;
+				#elif defined(TANGENT_LOCKED)
+					vec3 y = tangent;
+					vec3 x = normalize(cross(normalize(position0.xyz - camera_pos), y));
+				#else
+					vec3 x = view[0].xyz;
+					vec3 y = view[2].xyz;
+				#endif
+				
+				#if defined(ROTATION)
+					float c = cos(texcoord1);
+					float s = sin(texcoord1);
+					vec3 x_axis = x * c + y * s;
+					vec3 y_axis = y * c - x * s;
+				#else
+					vec3 x_axis = x;
+					vec3 y_axis = y;
+				#endif
+				
+				#if defined(PIVOT)
+					vec2 ci = position1;
+					vec2 corner = ci * ( (1.0-(ci*0.5+0.5)) * texcoord6 + ci * (texcoord5 * texcoord6) );
+				#else					
+					vec2 corner = position1 * (texcoord6 * 0.5);					
+				#endif
+				
+				vec3 wp = position0.xyz + (x_axis * corner.x + y_axis * corner.y);
+		
+				#if defined(UV0)
+					#ifdef IOS
+						vec2 uv = position1.xy * 0.5 + 0.5;
+					#else
+						vec2 uv = (position1 * vec2(1.0,-1.0) * 0.5 + 0.5);
+					#endif
+					#if defined(UV_ANIMATION)
+						uv *= animation_frame_size;						
+						float n_frames = 1.0 / animation_frame_size.x;
+						int frame_x = int(mod(texcoord0, n_frames));
+						int frame_y = int((texcoord0 / n_frames));
+						vec2 offset = vec2(float(frame_x) * animation_frame_size.x, float(frame_y) * animation_frame_size.y);
+						uv += offset;
+					#endif
+					v_texcoord = uv;
+				#endif
+				
+				#if defined(VERTEX_COLOR)					
+					v_color0 = color0.bgra;
+				#endif
+				
+				gl_Position =  vec4(wp, 1.0) * view_proj;
+			}
+		"""
+		
+		fp_code = """
+			PRECISION MEDIUMP float;
+			
+			#ifdef DIFFUSE_MAP
+				uniform sampler2D diffuse_map;
+				varying vec2 v_texcoord;
+			#endif
+			
+			#ifdef VERTEX_COLOR
+				varying LOWP vec4 v_color0;
+			#endif
+			
+			#ifdef BLEND_ADDITIVE
+				uniform LOWP float emissive_particle_intensity;
+			#endif
+			
+			void main() {
+				#if defined(DIFFUSE_MAP)				
+					LOWP vec4 c = texture2D(diffuse_map, v_texcoord);
+				#else
+					LOWP vec4 c = vec4(1,1,1,1);
+				#endif
+				
+				#if defined(VERTEX_COLOR)					
+					c *= (v_color0 * v_color0);	
+				#endif				
+				
+				#ifndef BLEND_ADDITIVE
+					//c = apply_fog(c, i.wp, i.depth);
+				#else
+					c.rgb *= emissive_particle_intensity;
+				#endif	
+				
+				gl_FragColor = c;
+			}
+		"""
+		
+		code="""
+			#if defined(DIFFUSE_MAP)
+				#define UV0
+			#endif			
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 corner_info : POSITION1;
+				float2 size : TEXCOORD7; // exports={ name="Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[10 10] step=[0.01 0.01] }
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				#if defined(ROTATION)
+					float rotation : TEXCOORD1; // exports = { name="Rotation" type="scalar" value=0 min=0 max=6.28319 step=0.0174533 }
+				#endif
+				#if defined(UV_ANIMATION)
+					float frame : TEXCOORD0; // exports = { name="UV Frame" type="scalar" value=0 min=0 max=100 step=1 }
+				#endif
+				#if defined(PIVOT)
+					float2 pivot : TEXCOORD6; // exports={ name="Pivot" type="vector2" value=[0.5 0.5] min=[0 0] max=[1 1] step=[0.001 0.001] }
+				#endif
+				#if defined(EXTERNAL_ROTATION) || defined(TANGENT_LOCKED)
+					float3 tangent : TANGENT; // exports={ name="Tangent" type="vector3" value=[0 0 1] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					#if defined(EXTERNAL_ROTATION)
+						float3 binormal : BINORMAL; // exports={ name="Binormal" type="vector3" value=[1 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					#endif
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				
+				#if defined(NEEDS_WORLD_POS)
+					float3 wp : TEXCOORD5;
+				#endif				
+			};
+			
+			CBUFFER_START(c_billboard)
+				float4x4 view;
+				float4x4 view_proj;
+				#if defined(UV_ANIMATION)
+					float2 animation_frame_size; // exports={ name="Frame Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[1 1] step=[0.000244140625 0.000244140625]}
+				#endif
+				#ifdef BLEND_ADDITIVE
+					float emissive_particle_intensity;
+				#endif
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT i) {			
+				PS_INPUT o;
+				
+				#if defined(EXTERNAL_ROTATION)
+					float3 y = i.tangent;
+					float3 x = i.binormal;
+				#elif defined(TANGENT_LOCKED)
+					float3 y = i.tangent;
+					float3 x = normalize(cross(normalize(i.position.xyz - camera_pos), y));
+				#else
+					float3 x = view._m00_m10_m20;
+					float3 y = view._m02_m12_m22;
+				#endif
+				
+				#if defined(ROTATION)
+					float c = cos(i.rotation);
+					float s = sin(i.rotation);
+					float3 x_axis = x * c + y * s;
+					float3 y_axis = y * c - x * s;
+				#else
+					float3 x_axis = x;
+					float3 y_axis = y;
+				#endif
+				
+				#if defined(PIVOT)
+					float2 ci = i.corner_info;
+					float2 corner = ci * ( (1-(ci*0.5+0.5)) * i.size + ci * (i.pivot * i.size) );
+				#else					
+					float2 corner = i.corner_info * (i.size * 0.5);					
+				#endif
+				
+				float3 wp = i.position.xyz + (x_axis * corner.x + y_axis * corner.y);
+				#if defined(NEEDS_WORLD_POS)
+					o.wp = wp;
+				#endif
+				o.position = mul(float4(wp, 1), view_proj);				
+				
+				#if defined(UV0)
+					float2 uv = (i.corner_info * float2(1,-1) * 0.5 + 0.5);
+					#if defined(UV_ANIMATION)
+						uv *= animation_frame_size;						
+						float n_frames = 1.f / animation_frame_size.x;
+						int frame_x = fmod(i.frame, n_frames);
+						int frame_y = i.frame / n_frames;
+						float2 offset = float2(frame_x * animation_frame_size.x, frame_y * animation_frame_size.y);
+						uv += offset;
+					#endif
+					o.uv = uv;
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					o.color = decode_vertex_color(i.color);
+				#endif				
+				
+				return o;
+			}			
+			
+			// Note: Alpha channel stored as sqrt(opacity) to preserve PRECISION
+			float4 fast_gamma_to_linear(float4 c) {
+				return c * c;
+			}
+			
+			float4 ps_main(PS_INPUT i) : SV_TARGET0 {
+				#if defined(DIFFUSE_MAP)				
+					float4 c = tex2D(diffuse_map, i.uv);
+				#else
+					float4 c = float4(1,1,1,1);
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					float4 vc = i.color;
+					vc = fast_gamma_to_linear(vc);
+					c *= vc;
+				#endif				
+				
+				#ifndef BLEND_ADDITIVE
+					//c = apply_fog(c, i.wp, i.depth);
+				#else
+					c.rgb *= emissive_particle_intensity;
+				#endif					
+				
+				return c;
+			}			
+		"""		
+	}
+	
+	mobile_ao_plane = {
+		includes = [ "common", "skinning" ]
+		
+		vp_code = """ 
+			PRECISION MEDIUMP float;			
+			
+			#if defined(SKINNED_4WEIGHTS)
+				#define FOUR_SPHERES
+				#define THREE_SPHERES
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_3WEIGHTS)				
+				#define THREE_SPHERES
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_2WEIGHTS)				
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_1WEIGHTS)				
+				#define ONE_SPHERE
+			#endif
+			
+			uniform mat4 world_view_proj;			
+			uniform vec3 surface_displacement; 			// exports={ name="Surface Displacement" type="vector3" value=[0 0 0.02] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+			uniform float intensity; 					// exports={ name="Intensity" type="scalar" value=1.0 min=0.0 max=1.0 step=0.01 }
+			
+			#if defined(ONE_SPHERE)
+				uniform vec3 sphere0_displacement; 		// exports={ name="Sphere 0 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+				uniform float sphere0_radius; 			// exports={ name="Sphere 0 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+			#endif
+			#if defined(TWO_SPHERES)
+				uniform vec3 sphere1_displacement; 		// exports={ name="Sphere 1 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+				uniform float sphere1_radius; 			// exports={ name="Sphere 1 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+			#endif
+			#if defined(THREE_SPHERES)
+				uniform vec3 sphere2_displacement; 		// exports={ name="Sphere 2 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+				uniform float sphere2_radius; 			// exports={ name="Sphere 2 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+			#endif
+			#if defined(FOUR_SPHERES)
+				uniform vec3 sphere3_displacement; 		// exports={ name="Sphere 3 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+				uniform float sphere3_radius; 			// exports={ name="Sphere 3 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+			#endif
+			
+			#define MAX_BONES 50
+			uniform mat4 bones[MAX_BONES];
+			
+			#if defined(SKINNED_1WEIGHT)
+				#define IndexType LOWP float
+			#elif defined(SKINNED_2WEIGHTS)
+				#define IndexType LOWP vec2
+			#elif defined(SKINNED_3WEIGHTS) 
+				#define IndexType LOWP vec3
+			#elif defined(SKINNED_4WEIGHTS)
+				#define IndexType LOWP vec4
+			#endif			
+			
+			attribute vec3 position0;
+			attribute IndexType blendindices;
+			attribute vec3 normal;
+			attribute vec4 color0;
+			varying LOWP vec4 v_color0;
+			
+			vec3 bone_pos(int idx) {
+				mat4 bone = bones[idx];
+				return vec3(bone[0].w, bone[1].w, bone[2].w);
+			}
+			
+			float blocking_factor(vec3 pos, vec3 normal, vec3 sphere_center, float sphere_radius) {				
+				const float eps = 0.0001;
+				
+				vec3 sphere_vector = sphere_center - pos;
+				float d = length(sphere_vector) + eps;
+				sphere_vector /= d;
+				float a = clamp(dot(sphere_vector, normal), 0.0, 1.0);				
+				float tmp = sphere_radius/d;
+				return clamp( (a*(tmp*tmp)), 0.0, 1.0);
+			}
+			
+			void main() {
+				vec4 pos = vec4(position0.x, position0.y, position0.z, 1.0);				
+				pos.xyz += surface_displacement;				
+				
+				gl_Position =  pos * world_view_proj;
+				
+				float occlusion = 0.0;
+				#ifdef ONE_SPHERE					
+					vec3 sphere0_pos = bone_pos(int(blendindices.x)) + sphere0_displacement;
+					occlusion = blocking_factor(pos.xyz, normal, sphere0_pos, sphere0_radius);
+				#endif
+				#ifdef TWO_SPHERES					
+					vec3 sphere1_pos = bone_pos(int(blendindices.y)) + sphere1_displacement;
+					occlusion = max(occlusion, blocking_factor(pos.xyz, normal, sphere1_pos, sphere1_radius));
+				#endif
+				#ifdef THREE_SPHERES					
+					vec3 sphere2_pos = bone_pos(int(blendindices.z)) + sphere2_displacement;
+					occlusion = max(occlusion, blocking_factor(pos.xyz, normal, sphere2_pos, sphere2_radius));
+				#endif
+				#ifdef FOUR_SPHERES					
+					vec3 sphere3_pos = bone_pos(int(blendindices.w)) + sphere3_displacement;
+					occlusion = max(occlusion, blocking_factor(pos.xyz, normal, sphere3_pos, sphere3_radius));
+				#endif				
+				
+				occlusion *= intensity;
+				occlusion *= color0.a;
+				
+				v_color0 = vec4(1.0,1.0,1.0, 1.0-clamp(occlusion, 0.0, 1.0));
+			}
+		"""
+		
+		fp_code = """
+			PRECISION MEDIUMP float;
+			
+			varying LOWP vec4 v_color0;
+			
+			void main() {				
+				gl_FragColor = v_color0;
+			}
+		"""
+		
+		code = """			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float3 normal : NORMAL;
+				float4 color : COLOR0;
+				SKIN_INPUT
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				float4 color : COLOR0;
+			};			
+			
+			#if defined(SKINNED_4WEIGHTS)
+				#define FOUR_SPHERES
+				#define THREE_SPHERES
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_3WEIGHTS)				
+				#define THREE_SPHERES
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_2WEIGHTS)				
+				#define TWO_SPHERES
+				#define ONE_SPHERE
+			#endif
+			#if defined(SKINNED_1WEIGHTS)				
+				#define ONE_SPHERE
+			#endif
+			
+			CBUFFER_START(c_per_object)
+				float4x4 world_view_proj;				
+				float3 surface_displacement; 	// exports={ name="Surface Displacement" type="vector3" value=[0 0 0.02] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+				float intensity; 				// exports={ name="Intensity" type="scalar" value=1.0 min=0.0 max=1.0 step=0.01 }
+				
+				#if defined(ONE_SPHERE)
+					float3 sphere0_displacement; 	// exports={ name="Sphere 0 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					float sphere0_radius; 			// exports={ name="Sphere 0 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+				#endif
+				#if defined(TWO_SPHERES)
+					float3 sphere1_displacement; 	// exports={ name="Sphere 1 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					float sphere1_radius; 			// exports={ name="Sphere 1 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+				#endif
+				#if defined(THREE_SPHERES)
+					float3 sphere2_displacement; 	// exports={ name="Sphere 2 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					float sphere2_radius; 			// exports={ name="Sphere 2 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+				#endif
+				#if defined(FOUR_SPHERES)
+					float3 sphere3_displacement; 	// exports={ name="Sphere 3 Displacement" type="vector3" value=[0 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					float sphere3_radius; 			// exports={ name="Sphere 3 Radius" type="scalar" value=0.1 min=0.0 max=2.0 step=0.01 }
+				#endif
+			CBUFFER_END				
+			
+			float blocking_factor(float3 pos, float3 normal, float3 sphere_center, float sphere_radius) {				
+				const static float eps = 0.0001f;
+
+				float3 sphere_vector = sphere_center - pos;
+				float d = length(sphere_vector) + eps;
+				sphere_vector /= d;
+				float a = saturate(dot(sphere_vector, normal));
+				float tmp = sphere_radius/d;
+				return saturate(a * (tmp*tmp));
+			}
+			
+			PS_INPUT vs_main(VS_INPUT input) { 
+				PS_INPUT o; 
+				
+				float4 position = input.position;				
+				position.xyz += surface_displacement;
+				float3 normal = input.normal;
+				
+				float4 p = mul(position, world_view_proj);
+				o.position = p;
+				
+				float occlusion = 0;
+				#ifdef ONE_SPHERE					
+					float3 sphere0_pos = bones[input.blendindices.x]._m30_m31_m32 + sphere0_displacement;
+					occlusion = max(occlusion, blocking_factor(position, normal, sphere0_pos, sphere0_radius));
+				#endif
+				#ifdef TWO_SPHERES					
+					float3 sphere1_pos = bones[input.blendindices.y]._m30_m31_m32 + sphere1_displacement;
+					occlusion = max(occlusion, blocking_factor(position, normal, sphere1_pos, sphere1_radius));
+				#endif
+				#ifdef THREE_SPHERES					
+					float3 sphere2_pos = bones[input.blendindices.z]._m30_m31_m32 + sphere2_displacement;
+					occlusion = max(occlusion, blocking_factor(position, normal, sphere2_pos, sphere2_radius));
+				#endif
+				#ifdef FOUR_SPHERES					
+					float3 sphere3_pos = bones[input.blendindices.w]._m30_m31_m32 + sphere3_displacement;
+					occlusion = max(occlusion, blocking_factor(position, normal, sphere3_pos, sphere3_radius));
+				#endif
+
+				occlusion *= intensity;
+				occlusion *= input.color.a;
+												
+				o.color = float4(1,1,1, 1-saturate(occlusion));
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {								
+				return input.color;
+			}					
+		"""
+	}	
+	
+}  
+

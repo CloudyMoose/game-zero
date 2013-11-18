@@ -1,0 +1,849 @@
+render_states = {
+	// Stencil mask bit allocation:
+	// |U221 1000|
+	// U = unused
+	// 2 = Decal projection mask ( 00 = not recieving, 01 = decal_group_1, 10 = decal_group_2, 11 = decal_group3
+	// 1 = Material mask (00 = default, 01 = SKIN)
+	// 0 = Temporary / Scratch pad (used for Cascaded Shadow Map slice cut-out)
+	
+	default = { 
+		states = {
+			ndefined_OES2 = {
+				fill_mode = "fill_solid"
+			}
+			defined_DOUBLE_SIDED = {
+				cull_mode = "cull_none"
+			}
+			ndefined_DOUBLE_SIDED = {
+				cull_mode = "cull_cw"
+			}			
+			
+			z_enable = "true"
+			z_write_enable = "true" 
+			z_func = "less_equal"			
+			blend_enable = "false"
+			write_mask0 = "red|green|blue|alpha"
+			write_mask1 = "red|green|blue|alpha"
+			write_mask2 = "red|green|blue|alpha"
+			write_mask3 = "red|green|blue|alpha"
+			
+			stencil_enable = "false"
+			stencil_func = "always"
+			stencil_fail = "stencil_op_keep"
+			stencil_mask = "0xff"
+			stencil_pass = "stencil_op_keep"
+			stencil_ref = "0x1" 
+			stencil_write_mask = "0xff"
+			stencil_z_fail = "stencil_op_keep"
+
+			stencil_func_back_side = "always"
+			stencil_fail_back_side = "stencil_op_keep"
+			stencil_pass_back_side = "stencil_op_keep"
+			stencil_z_fail_back_side = "stencil_op_keep"			
+
+			defined_D3D11 = {
+				depth_bias = "0"  
+				slope_scale_depth_bias = "0.0"				
+
+				independent_blend_enable = "false"
+				sample_mask = "0xffffffff"
+				nv_dbt_enable = "false"
+				multisample_antialias = "true"
+				
+				write_mask4 = "red|green|blue|alpha"
+				write_mask5 = "red|green|blue|alpha"
+				write_mask6 = "red|green|blue|alpha"
+				write_mask7 = "red|green|blue|alpha"
+				
+				defined_ALPHA_TO_COVERAGE = {
+					alpha_to_coverage_enable = "true"
+				}
+				ndefined_ALPHA_TO_COVERAGE = {
+					alpha_to_coverage_enable = "false"
+				}
+				srgb0 = "false"
+			}
+			
+			defined_GCM = {
+				offset_factor = "0"
+				offset_units = "0"
+				
+				srgb = "false"
+				dbt_enable = "false"
+			}
+			
+			defined_GL2 = {
+				offset_factor = "0"
+				offset_units = "0"
+				srgb = "false"
+			}
+			
+			defined_X360 = {
+				depth_bias = "0.0"  
+				slope_scale_depth_bias = "0.0"				
+				half_pixel_offset = "true"
+				high_precision_blend_enable = "false"
+				hi_stencil_enable = "false"
+				hi_stencil_write_enable = "false"		
+				hi_z_enable = "hiz_automatic"
+			}
+		}
+	}	
+	
+	ambient = {
+		inherits = "default"
+	}
+
+	gbuffer_ambient = {
+		inherits = "default"
+	}
+	
+	gbuffer_material = {
+		inherits = "default"
+
+		states = {
+			defined_D3D11 = {
+				stencil_enable = "true"
+				stencil_func = "always"
+				stencil_fail = "stencil_op_keep"
+				stencil_mask = "0xf8"
+				stencil_pass = "stencil_op_replace"			
+				stencil_write_mask = "0xf8"
+				stencil_z_fail = "stencil_op_keep"		
+				
+				stencil_func_back_side = "always"
+				stencil_fail_back_side = "stencil_op_keep"
+				stencil_pass_back_side = "stencil_op_replace"
+				stencil_z_fail_back_side = "stencil_op_keep"					
+				
+				// Observation: If we had a way to do sequenctial bit manipulation of state values this would be soo much cleaner, easier and more powerful!
+				defined_DEFERRED_DECALS_GROUP_1 = {
+					defined_SKIN = {
+						stencil_ref = "0x28" 
+					}
+					ndefined_SKIN = {
+						stencil_ref = "0x20" 
+					}						
+				}
+				ndefined_DEFERRED_DECALS_GROUP_1 = {
+					defined_DEFERRED_DECALS_GROUP_2 = {
+						defined_SKIN = {
+							stencil_ref = "0x48" 
+						}
+						ndefined_SKIN = {
+							stencil_ref = "0x40" 
+						}						
+					}
+					ndefined_DEFERRED_DECALS_GROUP_2 = {						
+						defined_DEFERRED_DECALS_GROUP_3 = {
+							defined_SKIN = {
+								stencil_ref = "0x68" 
+							}
+							ndefined_SKIN = {
+								stencil_ref = "0x60" 
+							}						
+						}					
+						ndefined_DEFERRED_DECALS_GROUP_3 = {
+							defined_SKIN = {
+								stencil_ref = "0x8" 
+							}
+							ndefined_SKIN = {
+								stencil_ref = "0x0" 
+							}							
+						}
+					}					
+				}
+			}
+		}
+	}		
+	
+	opacity = {
+		inherits = "default"
+		states = {
+			z_write_enable = "false"
+			cull_mode = "cull_none"
+			blend_enable = "true"
+			blend_op = "blend_op_add"
+			dest_blend = "blend_inv_src_alpha"
+			src_blend = "blend_src_alpha"
+			defined_X360 = {
+				high_precision_blend_enable = "true"
+			}			
+		}
+	}
+	
+	opacity_add = {
+		inherits = "opacity"
+		states = {
+			dest_blend = "blend_one"
+			src_blend = "blend_src_alpha"				
+		}
+	}	
+	
+	opacity_mul = {
+		inherits = "opacity"
+		states = {
+			dest_blend = "blend_one"
+			src_blend = "blend_dest_color"	
+		}
+	}	
+} 
+
+sampler_states = {
+	wrap_anisotropic = {
+		states = { 
+			address_u = "address_wrap"
+			address_v = "address_wrap"
+			filter = "anisotropic"
+			defined_X360 = {
+				max_anisotropy = "0x8"
+				trilinear_threshold = "trilinear_one_fourth"
+			}
+			defined_GL2 = {
+				max_anisotropy = "16.0"
+			}			
+			srgb = "false"
+		}	
+	}
+	wrap_linear = {
+		states = { 
+			address_u = "address_wrap"
+			address_v = "address_wrap"
+			filter = "min_mag_mip_linear"
+			defined_X360 = {
+				max_anisotropy = "0x8"
+				trilinear_threshold = "trilinear_one_fourth"
+			}			
+			srgb = "false"
+		}	
+	}
+	wrap_point = {
+		states = { 
+			address_u = "address_wrap"
+			address_v = "address_wrap"
+			filter = "min_mag_mip_point"
+			srgb = "false"
+		}	
+	}
+	wrap_anisotropic_srgb = {
+		inherits = "wrap_anisotropic"
+		states = { 
+			srgb = "true"			
+		}	
+	}
+	wrap_linear_srgb = {
+		inherits = "wrap_linear"
+		states = { 
+			srgb = "true"
+		}	
+	}
+	wrap_point_srgb = {
+		inherits="wrap_point"
+		states = { 
+			srgb = "true"		
+		}	
+	}
+	
+	clamp = {
+		states = {
+			srgb = "false"
+			defined_GCM = {
+				address_u = "address_clamp_to_edge"
+				address_v = "address_clamp_to_edge"					
+			}
+			defined_OES2 = {
+				address_u = "address_clamp_to_edge"
+				address_v = "address_clamp_to_edge"
+			}
+			defined_GL2 = {
+				address_u = "address_clamp_to_edge"
+				address_v = "address_clamp_to_edge"
+				address_w = "address_clamp_to_edge"
+			}
+			defined_D3D11 = {
+				address_u = "address_clamp"
+				address_v = "address_clamp"
+				address_w = "address_clamp"
+			}
+			defined_X360 = {
+				address_u = "address_clamp"
+				address_v = "address_clamp"
+				address_w = "address_clamp"
+			}
+		}		
+	}	
+	clamp_point = {
+		inherits="clamp"
+		states = { 
+			filter = "min_mag_mip_point"
+			defined_X360 = {
+				max_anisotropy = "0x8"
+				trilinear_threshold = "trilinear_one_fourth"
+			}						
+		}	
+	}
+	clamp_linear = {
+		inherits="clamp"
+		states = { 
+			filter = "min_mag_mip_linear"			
+		}	
+	}
+	clamp_point_srgb = {
+		inherits = "clamp_point"
+		states = { 
+			srgb = "true"
+		}	
+	}
+	clamp_linear_srgb = {
+		inherits = "clamp_linear"
+		states = { 
+			srgb = "true"
+		}	
+	}	
+	clamp_anisotropic_srgb = {
+		inherits = "clamp"
+		states = { 
+			srgb = "true"
+			filter = "anisotropic"
+		}	
+	}	
+	clamp_anisotropic = {
+		inherits = "clamp_anisotropic_srgb"
+		states = { 
+			srgb = "false"			
+		}	
+	}	
+	
+}
+
+hlsl_shaders = {	 
+	common = {
+		// Code included in both vp/fp programs
+		glsl_code = """
+			#ifdef OES2
+				#define PRECISION precision
+				#define LOWP lowp
+				#define MEDIUMP mediump
+				#define HIGHP highp
+			#else
+				#define PRECISION
+				#define LOWP
+				#define MEDIUMP
+				#define HIGHP
+			#endif
+		"""
+
+		code=""" 
+			//#define HIGH_RANGE_GLOSSINESS
+			#ifdef D3D11
+				//#define USE_DEPTH_RT
+				//#define ENCODE_DEPTH_IN_RGBA
+				#define CBUFFER_START(name) cbuffer name {
+				#define CBUFFER_END };
+				
+				//#define BILLBOARD_SHADOW_CASTING
+				//#define BIllBOARD_SHADOW_RECEIVING
+			#elif defined(GCM)
+				#define CBUFFER_START(name)
+				#define CBUFFER_END 
+				 
+				#define SV_POSITION POSITION
+				#define POSITION1 ATTR5
+				#define TEXCOORD6 ATTR4
+				#define TEXCOORD7 ATTR6
+				
+				#define SV_TARGET0 COLOR0
+				#define SV_TARGET1 COLOR1
+				#define SV_TARGET2 COLOR2
+				#define SV_TARGET3 COLOR3
+				#define BLENDWEIGHTS BLENDWEIGHT
+				#define VFACE FACE
+			#elif defined(X360)
+				#define CBUFFER_START(name) // cbuffer name {
+				#define CBUFFER_END // };
+				
+				#define SV_POSITION POSITION
+				#define BLENDWEIGHTS BLENDWEIGHT
+								
+				#define SV_TARGET0 COLOR0
+				#define SV_TARGET1 COLOR1
+				#define SV_TARGET2 COLOR2
+				#define SV_TARGET3 COLOR3				
+				#define discard clip(-1)
+			#elif defined(GL2)
+				#define CBUFFER_START(name) // cbuffer name {
+				#define CBUFFER_END // };
+				
+				#define SV_POSITION POSITION
+				#define BLENDWEIGHTS BLENDWEIGHT
+				#define uint int
+				#define USE_DEPTH_RT
+				//#define ENCODE_DEPTH_IN_RGBA
+			#endif
+			
+			#if defined(SKINNED_1WEIGHT) || defined(SKINNED_2WEIGHTS) || defined(SKINNED_3WEIGHTS) || defined(SKINNED_4WEIGHTS)
+				#define SKINNED
+			#endif	
+			
+			#define MAX_RIMLIGHT_EXPONENT 8
+			#define MAX_GLOSSINESS 500
+			#define ONE_BIT_ALPHA_REF 0.5
+			
+			#if defined(D3D11) || defined(GL2)
+				inline void one_bit_alpha_mask(float alpha, float ref) {
+					if (alpha < ref)
+						discard;
+				}
+			#elif defined(GCM) || defined(X360)
+				inline void one_bit_alpha_mask(float alpha, float ref) {
+					clip( (alpha < ref) ? -1 : 1 );
+				}			
+			#endif
+			
+			//remap color to RGBA using swizzling
+			inline float4 decode_vertex_color(float4 col) {
+				#if defined(D3D11) || defined(GL2)
+					return col.zyxw;
+				#elif defined(GCM)
+					return col.gbar;
+				#else
+					return col;
+				#endif
+			}			
+			
+			inline half3 decode_signed_normal(half3 v) {
+				return 2*(v - 0.5);
+			}
+			
+			inline half3 encode_signed_normal(half3 v) {
+				return v*0.5 + 0.5;
+			}			
+			
+			inline half3 decode_normal_map(half4 v) {
+				half4 temp = 2*(v - 0.5);
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					return half3(temp.w, temp.y, sqrt(1 - dot(temp.wy, temp.wy)));
+				#else
+					return half3(temp.x, temp.y, sqrt(1 - dot(temp.xy, temp.xy)));
+				#endif
+			}				
+			
+			inline half2 decode_normal_grad(half4 v) {
+				half4 temp = 2*(v - 0.5);
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					return half2(temp.w, temp.y);
+				#else
+					return half2(temp.x, temp.y);
+				#endif
+			}							
+
+			inline void tspace_transform_transpose(out float3 tangent_out, out float3 binormal_out, out float3 normal_out, in float3 tangent, in float3 binormal, in float3 normal, float3x3 mat) {
+				float3 t = mul(tangent, (float3x3)mat);
+				float3 b = mul(binormal, (float3x3)mat);
+				float3 n = mul(normal, (float3x3)mat);
+
+				// find transpose of 3x3matrix
+				tangent_out.x = t.x; tangent_out.y = b.x; tangent_out.z = n.x;
+				binormal_out.x = t.y; binormal_out.y = b.y; binormal_out.z = n.y;
+				normal_out.x = t.z; normal_out.y = b.z; normal_out.z = n.z;
+			}
+			
+			inline void tspace_transform(out float3 tangent_out, out float3 binormal_out, out float3 normal_out, in float3 tangent, in float3 binormal, in float3 normal, float3x3 mat) {
+				tangent_out = mul(tangent, (float3x3)mat);
+				binormal_out = mul(binormal, (float3x3)mat);
+				normal_out = mul(normal, (float3x3)mat);
+			}
+			
+			inline void tspace_transpose(out float3 tsm0, out float3 tsm1, out float3 tsm2, in float3 t, in float3 b, in float3 n) {
+				tsm0 = float3(t.x, b.x, n.x);
+				tsm1 = float3(t.y, b.y, n.y);
+				tsm2 = float3(t.z, b.z, n.z);				
+			}
+			
+			/// half and float types are considered the same on gl-platforms, only the floating point precision modifiers differ.
+			#if !defined(GL2) && !defined(OES2)
+				inline half3 rotate_vector3(half3 v, half3 x, half3 y, half3 z) {
+					return normalize(half3(dot(v, x), dot(v, y), dot(v, z)) );					
+				}
+			#endif
+			
+			inline float3 rotate_vector3(float3 v, float3 x, float3 y, float3 z) {
+				return normalize(float3(dot(v, x), dot(v, y), dot(v, z)) );					
+			}
+			
+			inline float3 rotate_point3(float3 v, float3 x, float3 y, float3 z) {
+				return float3(dot(v, x), dot(v, y), dot(v, z));
+			}
+			
+			inline float3 fast_gamma_to_linear_rgb(float3 c) {
+				return c * c;
+			}
+
+			inline float4 fast_gamma_to_linear_rgb(float4 c) {
+				return float4(c.rgb * c.rgb, c.a);
+			}
+
+			inline float4 fast_gamma_to_linear_rgba(float4 c) {
+				return c * c;
+			}
+			
+			inline float3 fast_linear_to_gamma_rgb(float3 c) {
+				return sqrt(c);
+			}
+
+			inline float4 fast_linear_to_gamma_rgb(float4 c) {
+				return float4(sqrt(c.rgb), c.a);
+			}
+
+			inline float4 fast_linear_to_gamma_rgba(float4 c) {
+				return sqrt(c);
+			}			
+			
+			CBUFFER_START(global_viewport)
+				float3 camera_unprojection;
+				float3 camera_pos;
+				float4x4 camera_view;
+				float4x4 camera_inv_view;
+				float4x4 camera_inv_projection;
+				float4x4 camera_world;
+				float time;
+				float delta_time;
+				float2 back_buffer_size;
+				float g_tessellation;
+				float g_tessellation_tri_size;
+				float g_tessellation_detail;
+				//float g_particle_lighting;
+			CBUFFER_END
+			
+			// will soon merge with global_viewport..
+			CBUFFER_START(global_camera)
+				float3 camera_near_far;
+			CBUFFER_END
+		"""
+	}
+	
+	gbuffer_access = {		
+		code="""
+			// Materials
+			
+			#define DEFAULT_MATERIAL 0
+			#define CLOTH_MATERIAL 1.0/255.0
+			#define SKIN_MATERIAL 2.0/255.0
+			#define COLORED_SPECULAR_MATERIAL 3.0/255.0
+		
+			inline float2 encode_float_rg(float v) {
+				float2 enc = float2(1.0, 255.0) * v;
+				enc = frac(enc);
+				enc -= enc.y * float2(1.0/255.0,1.0/255.0);
+				return enc;
+			}
+			
+			inline float decode_float_rg(float2 rg) {
+				return dot(rg, float2(1.0, 1/255.0));
+			}
+		
+			inline float4 encode_float_rgba(float v) {
+				float4 enc = float4(1.0, 255.0, 65025.0, 160581375.0) * v;
+				enc = frac(enc);
+				enc -= enc.yzww * float4(1.0/255.0,1.0/255.0,1.0/255.0,0.0);
+				return enc;
+			}
+			
+			inline float decode_float_rgba(float4 rgba) {
+				return dot(rgba, float4(1.0, 1/255.0, 1/65025.0, 1/160581375.0));
+			}		
+			
+			struct GBUFFER_OUT {
+				half4 buffer0 : SV_TARGET0;
+				half4 buffer1 : SV_TARGET1;
+				half4 buffer2 : SV_TARGET2;
+				#if defined(SELF_ILLUMINATION_MAP) && !defined(X360)
+					half4 buffer3 : SV_TARGET3;
+					#if defined(USE_DEPTH_RT)
+						float4 depth : SV_TARGET4;
+					#endif
+				#else
+					#if defined(USE_DEPTH_RT)
+						float4 depth : SV_TARGET3;
+					#endif
+				#endif
+			};
+			
+			#define ALBEDO(gbuffer) gbuffer.buffer0.rgb 
+			#define SPECULAR(gbuffer) gbuffer.buffer0.a
+			#define NORMAL(gbuffer) gbuffer.buffer1.rgb
+			#define GLOSSINESS(gbuffer) gbuffer.buffer1.a		
+			#define LIGHT_ACCUMULATION(gbuffer) gbuffer.buffer3.rgba 
+			#define GBUFFER_AUX(gbuffer) gbuffer.buffer2.rgba
+			
+			inline half3 gbuffer_encode_albedo(float3 albedo) {
+				return sqrt(albedo.xyz);
+			}
+			
+			inline half3 gbuffer_decode_albedo(half4 c) {
+				return c.rgb * c.rgb;
+			}
+			
+			/*
+			inline half2 spheremap_encode(half3 n) {
+				half2 enc = normalize(n.xy) * (sqrt(-n.z*0.5+0.5));
+				enc = enc*0.5+0.5;
+				return enc;
+			}
+			
+			inline half3 spheremap_decode(half4 enc) {
+				half4 nn = enc*half4(2,2,0,0) + half4(-1,-1,1,-1);
+				half l = dot(nn.xyz,-nn.xyw);
+				nn.z = l;
+				nn.xy *= sqrt(l);
+				return nn.xyz * 2 + half3(0,0,-1);
+			}			
+						
+			inline half3 spheremap_rgm_encode(half2 n) {
+				half3 rgm;				
+				//n *= 1.f / 6.f;
+				rgm.b = saturate(max(max(n.x, n.y), 1e-6));
+				rgm.b = ceil(rgm.b * 255.0) / 255.0;
+				rgm.rg = n / rgm.b;
+				return rgm;
+			}
+			
+			inline half2 spheremap_rgm_decode(half3 n) {
+				return (6.f * n.xy * n.z) * (1.f / 6.f);
+			}
+			*/
+			
+			inline half3 gbuffer_encode_normal_hiquality(half3 normal, sampler2D nft) {
+				normal = normalize(normal);
+				half3 abs_normal = abs(normal);
+				half max_abs_normal = max(abs_normal.x, max(abs_normal.y, abs_normal.z));
+				float2 tcoord = abs_normal.z < max_abs_normal ? (abs_normal.y < max_abs_normal ? abs_normal.yz : abs_normal.xz) : abs_normal.xy;
+				tcoord = tcoord.x < tcoord.y ? tcoord.yx : tcoord.xy;
+				tcoord.y /= tcoord.x;
+				normal /= max_abs_normal;
+				half fitting_scale = tex2D(nft, tcoord).a;
+				normal *= fitting_scale;
+				return encode_signed_normal(normal);
+			}			
+			
+			inline half3 gbuffer_encode_normal(half3 normal) {
+				return encode_signed_normal(normal);
+			}
+			
+			inline half3 gbuffer_decode_normal(half4 c) {
+				return decode_signed_normal(c.rgb);
+			}
+			
+			inline half gbuffer_encode_specular_mask(half s) {
+				return sqrt(s);
+			}
+			
+			inline half gbuffer_decode_specular_mask(half4 c) {
+				return c.a * c.a;
+			}
+			
+			inline half gbuffer_decode_glossiness(half4 c, float max_glossiness) {
+				#ifdef HIGH_RANGE_GLOSSINESS
+					// glossiness in range [1-8192]
+					return exp2(13*(c.a*c.a)); 
+				#else
+					return (c.a * c.a) * max_glossiness;
+				#endif				
+			}
+			
+			inline half gbuffer_encode_glossiness(half g) {
+				#ifdef HIGH_RANGE_GLOSSINESS
+					return sqrt(g);
+				#else
+					return sqrt(g) + 0.004;
+				#endif				
+			}
+			
+			inline half2 gbuffer_encode_tnormal(half3 normal) {
+				return (normal.xy * 0.5 + 0.5);				
+			}
+			
+			inline half3 gbuffer_decode_tnormal(half2 c) {
+				c = 2 * (c-0.5);
+				return half3(c, 1-length(c));				
+			}						
+			
+			half4 rgbm_encode(half3 color) {
+				half4 rgbm;
+				color *= 1.0 / 6.0;				
+				rgbm.a = saturate( max( max( color.r, color.g ), color.b ) );
+				rgbm.a = ceil( rgbm.a * 255.0 ) / 255.0;
+				rgbm.rgb = color / rgbm.a;
+				return rgbm;
+			}
+
+			half3 rgbm_decode(half4 rgbm) {
+				return 6.0 * rgbm.rgb * rgbm.a;
+			}						
+			
+			inline half4 gbuffer_encode_self_illumination(float3 col) {
+				return rgbm_encode(col);
+			}
+			
+			inline half3 gbuffer_decode_self_illumination(half4 c) {
+				return rgbm_decode(c);
+			}
+
+			inline float linearize_depth(float clip_depth) {				
+				return (camera_near_far.y*camera_near_far.x)/(camera_near_far.y - clip_depth*(camera_near_far.y-camera_near_far.x));
+			}
+			
+			#if defined(USE_DEPTH_RT)
+				#if defined(ENCODE_DEPTH_IN_RGBA)
+					#define DEPTH(gbuffer) gbuffer.depth.rgba
+				
+					inline float4 gbuffer_encode_depth(float depth) {
+						return encode_float_rgba((depth-camera_near_far.x) / camera_near_far.y);
+					}
+					
+					inline float gbuffer_decode_depth(float4 c) {
+						return decode_float_rgba(c) * camera_near_far.y + camera_near_far.x;
+					}
+				 
+				#else
+					#define DEPTH(gbuffer) gbuffer.depth.r
+				
+					inline float gbuffer_encode_depth(float depth) {
+						return depth;
+					}
+					
+					inline float gbuffer_decode_depth(float4 c) {
+						return c.r;
+					}
+				#endif
+			#else	
+				inline float gbuffer_decode_depth(float4 c) {
+					return c.r;
+				}			
+			#endif
+			
+			inline float4 encode_world_pos(float4 p, float3 unprojection) {				
+				return float4(mul(float3(p.x * unprojection.x, p.w, p.y * unprojection.z), (float3x3)camera_inv_view), p.w);
+			}
+
+			#if defined(NV_STEREO) && defined(D3D11)
+				inline float3 decode_world_pos(float4 p, float depth, float2 stereo_params) {
+					float3 stereo_basis = stereo_params.y * camera_unprojection.x * camera_inv_view[0];
+					float3 p_nrm = (p.xyz - stereo_basis) /  p.w;
+					return camera_inv_view._m30_m31_m32 + stereo_basis + p_nrm * depth;
+				}			
+			#else
+				inline float3 decode_world_pos(float4 p, float depth) {
+					return camera_inv_view._m30_m31_m32 + (p.xyz /  p.w) * depth;
+				}			
+			#endif			
+		"""
+	}
+	
+	skinning = { 
+		code="""
+			#ifdef SKINNED
+				CBUFFER_START(SkinMatrices)
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						#define MAX_BONES 50
+					#else
+						#define MAX_BONES 100
+					#endif
+					float4x4 bones[MAX_BONES];
+				CBUFFER_END
+
+				#if defined(SKINNED_1WEIGHT)
+					#define IndexType float1
+					#define WeightType float1
+
+					inline float3 skin_point(in float4 p, in IndexType bi, in WeightType bw) {
+						return mul(p, (bones[(int)bi.x]));
+					}			
+					inline float3 skin_vector(in float3 v, in IndexType bi, in WeightType bw) {
+						return normalize(mul(v, (float3x3)(bones[(int)bi.x])));
+					}
+					inline float3 skin_displacement_delta(in float3 v, in IndexType bi, in WeightType bw) {
+						return mul(v, (float3x3)(bones[(int)bi.x]));
+					}				
+				#elif defined(SKINNED_2WEIGHTS)
+					#define IndexType float2
+					#define WeightType float2
+
+					inline float3 skin_point(in float4 p, in IndexType bi, in WeightType bw) {
+						return bw.x * mul(p, (bones[(int)bi.x])) + bw.y * mul(p, (bones[(int)bi.y]));
+					}			
+					inline float3 skin_vector(in float3 v, in IndexType bi, in WeightType bw) {
+						return normalize(bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y])));
+					}
+					inline float3 skin_displacement_delta(in float3 v, in IndexType bi, in WeightType bw) {
+						return bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y]));
+					}										
+				#elif defined(SKINNED_3WEIGHTS)
+					#define IndexType float3
+					#define WeightType float3
+					
+					inline float3 skin_point(in float4 p, in IndexType bi, in WeightType bw) {						
+						return bw.x * mul(p, (bones[(int)bi.x])) + bw.y * mul(p, (bones[(int)bi.y])) + bw.z * mul(p, (bones[(int)bi.z]));
+					}			
+					inline float3 skin_vector(in float3 v, in IndexType bi, in WeightType bw) {
+						return normalize(bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y])) + bw.z * mul(v, (float3x3)(bones[(int)bi.z])));
+					}					
+					inline float3 skin_displacement_delta(in float3 v, in IndexType bi, in WeightType bw) {
+						return bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y])) + bw.z * mul(v, (float3x3)(bones[(int)bi.z]));
+					}					
+				#elif defined(SKINNED_4WEIGHTS)
+					#define IndexType float4
+					#define WeightType float4
+					
+					inline float3 skin_point(in float4 p, in IndexType bi, in WeightType bw) {
+						return bw.x * mul(p, (bones[(int)bi.x])) + bw.y * mul(p, (bones[(int)bi.y])) + bw.z * mul(p, (bones[(int)bi.z])) + bw.w * mul(p, (bones[(int)bi.w]));
+					}			
+					inline float3 skin_vector(in float3 v, in IndexType bi, in WeightType bw) {
+						return normalize(bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y])) + bw.z * mul(v, (float3x3)(bones[(int)bi.z])) + bw.w * mul(v, (float3x3)(bones[(int)bi.w])));
+					}					
+					inline float3 skin_displacement_delta(in float3 v, in IndexType bi, in WeightType bw) {
+						return bw.x * mul(v, (float3x3)(bones[(int)bi.x])) + bw.y * mul(v, (float3x3)(bones[(int)bi.y])) + bw.z * mul(v, (float3x3)(bones[(int)bi.z])) + bw.w * mul(v, (float3x3)(bones[(int)bi.w]));
+					}					
+				#endif
+				
+				#ifdef GCM
+					#define BLENDINDEXSEMANTIC ATTR7
+				#else
+					#define BLENDINDEXSEMANTIC BLENDINDICES
+				#endif
+				
+				#define SKIN_INPUT \
+					IndexType blendindices : BLENDINDEXSEMANTIC; \
+					WeightType blendweights : BLENDWEIGHTS; 
+			#else
+				#define SKIN_INPUT 			
+			#endif
+		"""
+	}	
+	
+	fog = {
+		code="""
+			CBUFFER_START(c_fog)
+				float2 fog_depth_range;
+				float3 fog_color;
+				float3 sun_direction;
+				float3 sun_color;
+				float3 fog_sun_blend;
+			CBUFFER_END
+			
+			half4 apply_fog(half4 c, float3 wp, float d) {
+				float start = fog_depth_range.x;
+				float end = fog_depth_range.y;
+				float b = 1.f / (end-start);
+
+				float3 view_dir = normalize(camera_world._m30_m31_m32 - wp);
+				
+				float dist = d - start;				
+				float a = saturate(exp(-camera_world._m32 * b) * (1-exp(-dist * -view_dir.z * b)) / -view_dir.z);					
+				half sa = fog_sun_blend.x * pow(saturate(dot(view_dir, sun_direction)), fog_sun_blend.y);
+				half3 fog_c = lerp(fog_color, fog_sun_blend.z * sun_color, sa);								
+				return half4(lerp(c.rgb, fog_c, a), c.a);
+			}
+		"""		
+	}
+}

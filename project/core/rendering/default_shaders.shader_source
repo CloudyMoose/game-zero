@@ -1,0 +1,282 @@
+includes = [ "core/rendering/common.shader_source", "core/rendering/default_shaders_mobile.shader_source"  ] 
+
+render_states = {   
+	opacity_no_depth = {
+		inherits = "opacity"
+		states = {
+			z_enable = "false"
+		}
+	}
+	
+	line_object = {
+		inherits = "opacity"
+		states = {
+			defined_DEPTH_TEST_DISABLED = {
+				z_enable = "false"
+			}
+		}
+	}
+	
+	gui = {
+		inherits = "opacity"
+		states = {
+			ndefined_DEPTH_TEST_ENABLED = {
+				z_enable = "false"
+			}
+			defined_WRITE_MASK = {
+				blend_enable = "false"
+				write_mask0 = "alpha"
+			}
+			defined_MASKED = {
+				blend_enable = "true"
+				blend_op = "blend_op_add"
+				dest_blend = "blend_inv_dest_alpha"
+				src_blend = "blend_dest_alpha"
+			}
+		}
+	}
+}  
+
+hlsl_shaders = {	
+	gui = {
+		includes = [ "common" ]
+
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_linear" }
+			}
+			defined_YUV_VIDEO = {
+				diffuse_map = { sampler_states = "wrap_linear" }
+				normal_map = { sampler_states = "wrap_linear" }
+			}
+			defined_BINK_VIDEO = {
+				diffuse_map = { sampler_states = "wrap_linear" }
+				normal_map = { sampler_states = "wrap_linear" }
+				material_map = { sampler_states = "wrap_linear" }
+			}
+		}
+		
+		code="""
+			#if defined(DIFFUSE_MAP) || defined(YUV_VIDEO) || defined(BINK_VIDEO)
+				#define UV0				
+			#endif
+			
+			#if defined(DIFFUSE_MAP)
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(YUV_VIDEO) || defined(BINK_VIDEO)
+				sampler2D diffuse_map;
+				sampler2D normal_map;
+			#endif
+
+			#if defined(BINK_VIDEO)
+				sampler2D material_map;
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float4 color : COLOR;
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 color : COLOR;
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif				
+			};
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float threshold_fade; // exports = { name="Threshold Fade" type="scalar" value=0.05 min=0.0 max=1 step=0.001 }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);
+				o.color = decode_vertex_color(input.color);
+				#if defined(UV0)
+					o.uv = input.uv;
+				#endif
+				return o;
+			}
+			
+			float3 yuv_to_rgb(float3 yuv) {			
+				float y = 1.1643*(yuv.x-0.0625);
+				float u = yuv.y - 0.5;
+				float v = yuv.z - 0.5;
+				float r = y + 1.5958*v;
+				float g = y - 0.39173*u-0.81290*v;
+				float b = y + 2.017*u;
+				return float3(r,g,b);
+			}
+
+			float3 ycbcr_to_rgb(float3 ycbcr) {
+				float y = 1.164 * (ycbcr.x - 16.0 / 256.0);
+				float r = y + 1.596 * (ycbcr.z - 0.5);
+				float g = y - 0.813 * (ycbcr.z - 0.5) - 0.391 * (ycbcr.y - 0.5);
+				float b = y + 2.018 * (ycbcr.y - 0.5);
+				return float3(r,g,b);
+			}
+
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#if defined(WRITE_MASK)
+					float mask = tex2D(diffuse_map, input.uv).a;
+					#if defined(THRESHOLD_MASK)
+						mask = input.color.a > mask ? saturate((input.color.a - mask) / threshold_fade) : 0;						
+					#endif
+					return float4(0,0,0,mask);
+				#else
+					float4 c = input.color;					
+					
+					#if defined(YUV_VIDEO)
+						#ifdef GCM
+							float y = tex2D(diffuse_map, input.uv).r;
+							float2 uv = tex2D(normal_map, input.uv).rg;					
+						#else						
+							float y = tex2D(diffuse_map, input.uv).r;
+							float2 uv = tex2D(normal_map, input.uv).gr;
+						#endif					
+						
+						c *= float4(yuv_to_rgb(float3(y,uv)), 1);
+					#elif defined(BINK_VIDEO)
+						#ifdef X360
+							float y = tex2D(diffuse_map, input.uv).a;
+							float b = tex2D(normal_map, input.uv).a;
+							float r = tex2D(material_map, input.uv).a;
+						#else
+							float y = tex2D(diffuse_map, input.uv).r;
+							float b = tex2D(normal_map, input.uv).r;
+							float r = tex2D(material_map, input.uv).r;		
+						#endif
+						
+						c *= float4(ycbcr_to_rgb(float3(y,b,r)), 1);
+					#elif defined(DIFFUSE_MAP)
+						#ifdef NORMAL_TO_DIFFUSE
+							float4 diffuse = tex2D(diffuse_map, input.uv).rgaa;
+						#else
+							float4 diffuse = tex2D(diffuse_map, input.uv);
+						#endif
+						#if defined(ONE_BIT_ALPHA)
+							one_bit_alpha_mask(diffuse.a, 0.5);
+							c.rgb * diffuse.rgb;
+						#else
+							c *= diffuse;
+						#endif
+					#endif
+					
+					#if defined(MASKED)						
+						c.rgb *= c.a;						
+					#endif				
+					
+					return c;
+				#endif
+			}	
+		"""
+	}	
+}
+
+shaders = {
+	line_object = {
+		editor_advanced_mode = true
+		
+		editor_options = [			
+			{
+				name="Depth Testing"
+				options = [
+					{ name="Disable Depth Testing" define="DEPTH_TEST_DISABLED" }
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes = [{
+					defined = "MOBILE"
+					pass = [
+						{ layer="transparent" hlsl_shader="mobile_gui" render_states="line_object" }
+					]
+					fail = [
+						{ layer="transparent" hlsl_shader="gui" render_states="line_object" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	}
+	
+	gui = {		 
+		editor_options = [			
+			{
+				name="Pixel Modifiers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" }
+					{ name="YUV Video Decode" define="YUV_VIDEO" tool_tip="Does YUV->RGB conversion (Y in diffuse_map slot, UV in normal_map slot).\nTo be used together with VideoPlayer" }
+					{ name="Bink Video Decode" define="BINK_VIDEO" tool_tip="Use together with VideoPlayer" }
+					{ name="One Bit Alpha" define="ONE_BIT_ALPHA" }
+					{ name="Normal Map to Diffuse Map" define="NORMAL_TO_DIFFUSE" tool_tip="Sample RGAA to display normal maps as diffuse maps."}
+				]
+			}
+			{
+				name="Masking"				
+				options = [
+					{ name="Write Transparency Mask" define="WRITE_MASK" }
+					{ name="Threshold Mask" define="THRESHOLD_MASK" }
+					{ name="Transparency Masked" define="MASKED" }
+				]
+			}
+			{
+				name="Depth Testing"
+				options = [
+					{ name="Depth Testing Enabled" define="DEPTH_TEST_ENABLED" }
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes = [
+					{
+						defined = "MOBILE"
+						pass = [
+							{ layer="gui" hlsl_shader="mobile_gui" render_states="gui" }
+						]
+						fail = [
+							{ layer="transparent" hlsl_shader="gui" render_states="gui" }
+						]
+					}
+				]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	}	
+	
+}
+
+static_compile = [ 
+	{ shader="line_object" defines="" } 
+	{ shader="line_object" defines="DEPTH_TEST_DISABLED" } 	
+	{ shader="gui" defines="" } 
+	{ shader="gui" defines="DIFFUSE_MAP" } 
+	{ shader="gui" defines="DEPTH_TEST_ENABLED" } 	
+	{ shader="gui" defines="DEPTH_TEST_ENABLED DIFFUSE_MAP" } 	
+	{ shader="gui" defines="DIFFUSE_MAP ONE_BIT_ALPHA" } 	
+	{ shader="gui" defines="DEPTH_TEST_ENABLED DIFFUSE_MAP ONE_BIT_ALPHA" } 		
+]

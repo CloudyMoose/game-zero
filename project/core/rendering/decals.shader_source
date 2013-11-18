@@ -1,0 +1,336 @@
+// in this context include refers to another shader file
+includes = [ "core/rendering/common.shader_source", "core/rendering/base_dx11.shader_source", "core/rendering/base_mobile.shader_source" ] 
+
+render_states = {
+	decal_projector = {
+		inherits = "opacity"
+		states = {
+			z_func = "greater_equal"
+			write_mask0 = "red|green|blue"
+			
+			stencil_enable = "true"
+			stencil_func = "equal"
+			stencil_fail = "stencil_op_keep"
+			stencil_mask = "0xe0"
+			stencil_pass = "stencil_op_keep"			
+			stencil_write_mask = "0xe0"
+			stencil_z_fail = "stencil_op_keep"
+			
+			stencil_func_back_side = "equal"
+			stencil_fail_back_side = "stencil_op_keep"
+			stencil_pass_back_side = "stencil_op_keep"
+			stencil_z_fail_back_side = "stencil_op_keep"						
+			
+			defined_DEFERRED_DECALS_GROUP_1 = {
+				stencil_ref = "0x20" 
+			}
+			defined_DEFERRED_DECALS_GROUP_2 = {
+				stencil_ref = "0x40" 
+			}			
+			defined_DEFERRED_DECALS_GROUP_3 = {
+				stencil_ref = "0x60" 
+			}			
+		}		
+	}
+	decal_opacity = {
+		inherits = "opacity"
+		states = {			
+			write_mask0 = "red|green|blue"
+		}		
+	}
+	
+	wireframe = {
+		inherits = "opacity"
+		states = {
+			fill_mode = "fill_wireframe"	
+		}
+	}	
+	
+}
+
+hlsl_shaders = {
+	decal = { 
+		includes = [ "common", "gbuffer_access", "skinning" ]
+				
+		samplers = {
+			defined_NORMAL_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }
+				normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			ndefined_NORMAL_MAP = {
+				defined_DIFFUSE_MAP = {
+					diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }
+				}				
+			}
+		}
+		
+		code="""
+			#if defined(DIFFUSE_MAP)
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(NORMAL_MAP)
+				sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			#endif
+		
+			struct VS_INPUT {
+				float4 position : POSITION;		
+				float2 uv : TEXCOORD0;
+				float instance : TEXCOORD1;
+				#if defined(WRITES_NORMAL_MAP)
+					float3 tangent : TANGENT;
+					float3 binormal : BINORMAL;					
+				#endif				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float4 color : COLOR0;				
+				#if defined(WRITES_NORMAL_MAP)
+					float3 tsm0 : TEXCOORD1;
+					float3 tsm1 : TEXCOORD2;
+					float3 tsm2 : TEXCOORD3;
+				#endif
+			};			
+			
+			#define MAX_INSTANCES_PER_BATCH 50
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float4x4 instance_data[MAX_INSTANCES_PER_BATCH];				
+				float2 sustain_release;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				
+				// input.instance is global and does not respect batch splitting based on MAX_INSTANCES_PER_BATCH, calc inner index
+				int instance = input.instance - ((int)(input.instance + 0.5) / MAX_INSTANCES_PER_BATCH) * MAX_INSTANCES_PER_BATCH;				
+				float4x4 decal_tm = instance_data[instance];
+				float t = decal_tm._m33;
+				//float3 custom = decal_tm._m03_m13_m23;
+				decal_tm._m03_m13_m23 = float3(0,0,0);				
+				decal_tm._m33 = t == 0 ? 0 : 1;
+				
+				float4 position = input.position;				
+				position = mul(position, decal_tm);
+				o.position = mul(position, world_view_proj);
+				o.position.z -= 0.001f;
+				
+				float fade = (t > sustain_release.x ? (t < (sustain_release.x + sustain_release.y) ? 1-saturate((t-sustain_release.x) / sustain_release.y) : 0) : 1);
+				float3 custom = float3(1,1,1);
+				o.color = float4(custom,fade);
+				
+				o.uv = input.uv;
+				
+				#if defined(WRITES_NORMAL_MAP)					
+					half3 tangent = input.tangent;
+					half3 binormal = input.binormal;
+					half3 normal = cross(binormal, tangent);
+					tangent = -tangent;
+					
+					tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, tangent, binormal, normal, (float3x3)decal_tm);					
+				#endif
+				
+				return o;
+			}
+						
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 
+			{
+				#ifdef DIFFUSE_MAP
+					half4 albedo = tex2D(diffuse_map, input.uv);
+				#else
+					half4 albedo = half4(0.5, 0.5, 0.5, 1.f);
+				#endif
+				albedo *= input.color;
+				
+				#if defined(WRITES_NORMAL_MAP) 
+					half3 tnormal = decode_normal_map(tex2D(normal_map, input.uv));
+					half3 world_space_normal = rotate_vector3(tnormal, (half3)input.tsm0, (half3)input.tsm1, (half3)input.tsm2);					
+					return half4(gbuffer_encode_normal(world_space_normal), albedo.a);
+				#else					
+					return half4(gbuffer_encode_albedo(albedo.rgb), albedo.a);
+				#endif
+			}	
+		"""
+	}
+	
+	decal_projector = { 
+		includes = [ "common", "gbuffer_access" ]
+		
+		samplers = {
+			depth = { sampler_states = "clamp_point" }
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic" }
+			}
+		}	
+		
+		code="""
+			sampler2D depth;
+			#if defined(DIFFUSE_MAP)
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" sort_tag="0_DIFFUSE_MAP"}
+			#endif
+
+			struct VS_INPUT {
+				float4 position : POSITION;
+			};
+
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 w : TEXCOORD0;
+			};
+
+			CBUFFER_START(c0)
+				float4x4 inv_world;
+				float4x4 world_view_proj;
+				float4x4 bounding_volume;
+				#if defined(DIFFUSE_MAP)
+					float2 uv_scale; // exports={ name="UV Scale" type="vector2" value=[1 1] min=[0 0] max=[10 10] step=[0.01 0.01] }
+					float2 uv_offset; // exports={ name="UV Offset" type="vector2" value=[0 0] min=[0 0] max=[1 1] step=[0.01 0.01] }
+				#endif
+				float4 dev_wireframe_color;
+			CBUFFER_END
+
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+
+				o.position = mul(input.position, world_view_proj);
+				o.w = encode_world_pos(o.position, camera_unprojection);
+
+				return o;
+			}
+
+			#ifdef DRAW_WIREFRAME
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					return dev_wireframe_color;
+				}
+			#else
+				half4 ps_main(PS_INPUT input
+					#if defined(GCM)
+						, float4 wpos : WPOS
+					#elif defined(X360) || defined(GL2)
+						, float4 wpos : VPOS
+					#endif
+					) : SV_TARGET0
+				{
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						half2 screen_uv = wpos.xy / back_buffer_size;
+					#else
+						half2 screen_uv = input.position.xy / back_buffer_size;
+					#endif
+
+					float3 wp = decode_world_pos(input.w, gbuffer_decode_depth(tex2D(depth, screen_uv)));
+					float3 op = mul(float4(wp, 1), inv_world).rgb;
+					float3 containment = (op > bounding_volume._m00_m01_m02) * (op < bounding_volume._m10_m11_m12);
+
+					float mask = dot(containment, containment) == 3;
+
+					float2 uv = (op.xz / (bounding_volume._m20_m22*0.5))*0.5+0.5;
+					uv.y = 1 - uv.y;
+
+					#ifdef DIFFUSE_MAP
+						uv = uv * uv_scale + uv_offset;
+						return tex2D(diffuse_map, uv) * float4(1,1,1,mask);
+					#else
+						return float4(uv, 0, mask);
+					#endif
+				}
+			#endif
+		"""
+	}		
+}
+
+shaders = {
+	decal = {
+		editor_options = [
+			{
+				name="Texture Layers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" }
+					{ name="Normal Map" define="NORMAL_MAP" }
+				]
+			}
+		
+			/*{
+				name="Vertex Modifiers"
+				options = [
+					{ name="Segmented Skinning" define="SKINNED_1WEIGHT" }
+					{ name="2 Weight Skinning" define="SKINNED_2WEIGHTS" }
+					{ name="3 Weight Skinning" define="SKINNED_3WEIGHTS" }
+					{ name="4 Weight Skinning" define="SKINNED_4WEIGHTS" }
+				]
+			}*/		
+		]
+		
+		contexts = {
+			default = {	
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="decal_albedo" hlsl_shader="decal" render_states="decal_opacity" }						
+						{ 
+							defined="NORMAL_MAP"
+							pass = [
+								{ layer="decal_normal" hlsl_shader="decal" defines="WRITES_NORMAL_MAP" render_states="decal_opacity" }
+							]
+						}
+					]
+				}]								
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 		
+	}	
+	
+	decal_projector = {
+		editor_options = [
+			{
+				name="Texture Layers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" }					
+				]
+			}
+			
+			{
+				name="Material Settings"
+				options = [
+					{ name="Decal Group 1" define="DEFERRED_DECALS_GROUP_1" }		
+					{ name="Decal Group 2" define="DEFERRED_DECALS_GROUP_2" }
+					{ name="Decal Group 3" define="DEFERRED_DECALS_GROUP_3" }
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="decal_albedo" hlsl_shader="decal_projector" render_states="decal_projector" }
+						{ layer="wireframe" hlsl_shader="decal_projector" defines="DRAW_WIREFRAME" render_states="wireframe" branch_key="dev_wireframe" }
+					]
+				}]
+			}			
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	} 		
+}

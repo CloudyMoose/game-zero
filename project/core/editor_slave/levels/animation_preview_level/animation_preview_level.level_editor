@@ -1,0 +1,486 @@
+
+Flow = {
+	Connections = [
+	]
+	Groups = [
+	]
+	Nodes = [
+	]
+}
+Groups = [
+]
+Layers = [
+	"Default"
+]
+LevelObjectSets = {
+	NestedSetNamesBySetName = {
+	}
+	ObjectIdsBySetName = {
+	}
+	VisibleSetNames = [
+	]
+}
+LevelReferences = [
+]
+LightBakeSettings = {
+	ExcludedObjectSets = [
+	]
+	Layers = [
+	]
+}
+Navmeshes = [
+]
+Notes = [
+]
+ParticleEffects = [
+]
+PositionMarkers = [
+]
+Prototypes = [
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "853c222c-0a65-4ca0-8d8b0c20a8d7fa20"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -155
+			Y = -5
+			Z = 10
+		}
+		Radius = {
+			X = 5
+			Y = 155
+			Z = 10
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "12db2c29-6f22-4323-894709097b015fd7"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -5.0000147819519
+			Y = 155
+			Z = 10
+		}
+		Radius = {
+			X = 155
+			Y = 5
+			Z = 10
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "d9c607cc-3967-4045-8d9c84899f5f59c6"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 155
+			Y = 0
+			Z = 10
+		}
+		Radius = {
+			X = 5
+			Y = 160
+			Z = 10
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "2f2596ce-1130-4638-a1c769b20e178bc2"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = -155
+			Z = 10
+		}
+		Radius = {
+			X = 150
+			Y = 5
+			Z = 10
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+]
+Scatter = {
+	PoolSettings = {
+	}
+	ScatterData = {
+	}
+}
+Settings = {
+	FrozenLayers = [
+	]
+	HiddenLayers = [
+	]
+	HiddenObjects = [
+	]
+	LastHiddenObjects = [
+	]
+	ShadingEnvironment = ""
+	SkydomeUnit = "core/editor_slave/units/skydome/skydome"
+	SoundEnvironment = ""
+	TimpaniSoundEnvironment = "default"
+}
+Sounds = [
+]
+Splines = [
+]
+StaticPvsBakeSettings = {
+	BoundsMax = {
+		X = 1
+		Y = 1
+		Z = 1
+	}
+	BoundsMin = {
+		X = -1
+		Y = -1
+		Z = -1
+	}
+	ExcludedObjectSets = [
+	]
+	Layers = [
+	]
+	SamplesPerCubicMeter = 1
+	SlicesX = 1
+	SlicesY = 1
+	SlicesZ = 1
+}
+Transients = {
+	Camera = {
+		InterestPointDistance = 10
+		OrthographicZoom = 10
+		Pos = {
+			X = -430.171295166016
+			Y = 265.589508056641
+			Z = 433.578704833984
+		}
+		ProjectionType = 1
+		Rot = {
+			W = -0.446761012077332
+			X = 0.171998992562294
+			Y = -0.315438002347946
+			Z = 0.819341003894806
+		}
+		RotationSpeed = 0.003
+		TranslationSpeed = 73.894592
+	}
+}
+Triggers = [
+]
+Units = [
+	{
+		Id = "a54dc31e-aa00-41cc-aaf5ad903ac90040"
+		Lights = {
+		}
+		Name = "animation_preview_tile_3"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = 100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "509be1cb-a146-4379-98d0f3bbab209a3a"
+		Lights = {
+		}
+		Name = "animation_preview_tile_4"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -100
+			Y = -100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "3a872eb9-9415-4a0f-98de97f01412f74a"
+		Lights = {
+		}
+		Name = "animation_preview_tile_5"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -100
+			Y = 0
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "534b3c69-102b-40e7-8390f45ebf8c0e6b"
+		Lights = {
+		}
+		Name = "animation_preview_tile_6"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -100
+			Y = 100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "770af326-cc95-48bd-9fb1a73861a50097"
+		Lights = {
+		}
+		Name = "animation_preview_tile_7"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 100
+			Y = 100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "eb48b9a2-b51b-4803-9b81afd7101b09af"
+		Lights = {
+		}
+		Name = "animation_preview_tile_8"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 100
+			Y = 0
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "d4b98ea4-af3c-481d-b2fa23aa802437e5"
+		Lights = {
+		}
+		Name = "animation_preview_tile_9"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 100
+			Y = -100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "119b6db0-135f-423c-b95f76d7d41731ea"
+		Lights = {
+		}
+		Name = "animation_preview_tile_1"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		Id = "f1a6be72-982c-47f1-9af2c3176f0f0447"
+		Layer = "Default"
+		Lights = {
+		}
+		Name = "animation_preview_tile_2"
+		OverridePoses = {
+		}
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = -100
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+]
+Volumes = [
+]

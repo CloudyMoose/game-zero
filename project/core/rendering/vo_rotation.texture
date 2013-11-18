@@ -1,0 +1,26 @@
+
+input = [
+	{
+		format = "R16G16F"
+		height = 4
+		texture = "core/rendering/vo_rotation.raw"
+		type = "IMAGE2D"
+		width = 4
+	}
+]
+output = {
+	ps3 = {
+		filter_wrap_mode = "clamp"
+		format = "R16G16F"
+		mip_level_clamp = -1
+		mipmap_filter = "box"
+		normal_map = false
+	}
+	win32 = {
+		filter_wrap_mode = "clamp"
+		format = "R16G16F"
+		mip_level_clamp = -1
+		mipmap_filter = "box"
+		normal_map = false
+	}
+}

@@ -1,0 +1,22 @@
+
+lights = {
+}
+lod = [
+]
+materials = [
+	"core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+]
+renderables = {
+	animation_preview_tile = {
+		culling = "bounding_volume"
+		light_baking = "none"
+		occluder = false
+		shadow_caster = false
+		surface_queries = false
+		viewport_visible = true
+	}
+}
+snap_points = [
+]
+visibility_groups = {
+}

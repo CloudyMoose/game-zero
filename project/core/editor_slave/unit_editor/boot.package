@@ -1,0 +1,2 @@
+lua = ["core/editor_slave/unit_editor/boot"]
+physics_properties = ["global"] 

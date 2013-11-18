@@ -1,0 +1,85 @@
+
+arial = {
+	material_contexts = {
+	}
+	shader = "gui:DEPTH_TEST_ENABLED:DIFFUSE_MAP"
+	textures = {
+		diffuse_map = "core/editor_slave/gui/arial"
+	}
+	variables = {
+	}
+}
+arial_df = {
+	shader = "gui:DEPTH_TEST_ENABLED:DIFFUSE_MAP:ONE_BIT_ALPHA"
+	textures = {
+		diffuse_map = "core/editor_slave/gui/arial_df"
+	}
+}
+depth_test_disabled = {
+	shader = "gui"
+}
+light = {
+	shader = "base"
+	variables = {
+		glossiness = {
+			type = "scalar"
+			value = 0.2
+		}
+		specular = {
+			type = "scalar"
+			value = 0.2
+		}
+	}
+}
+prototype = {
+	material_contexts = {
+	}
+	shader = "base:VC_COMPRESSED:VC_TINT_RGB"
+	textures = {
+	}
+	variables = {
+		diffuse_rgb = {
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+		}
+		glossiness = {
+			type = "scalar"
+			value = 0.2
+		}
+		specular = {
+			type = "scalar"
+			value = 0.2
+		}
+	}
+}
+thumbnail_diffuse = {
+	material_contexts = {
+	}
+	shader = "gui:DIFFUSE_MAP"
+	textures = {
+	}
+	variables = {
+	}
+}
+thumbnail_normal = {
+	material_contexts = {
+	}
+	shader = "gui:DIFFUSE_MAP:NORMAL_TO_DIFFUSE"
+	textures = {
+	}
+	variables = {
+	}
+}
+trigger = {
+	material_contexts = {
+	}
+	shader = "gui:DEPTH_TEST_ENABLED"
+	textures = {
+	}
+	variables = {
+	}
+}

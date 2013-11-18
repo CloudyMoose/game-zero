@@ -1,0 +1,23 @@
+volume = {
+	shader = "base:VC_COMPRESSED:VC_TINT_RGB"
+	textures = {
+	}
+	variables = {
+		diffuse_rgb = {
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+		}
+		glossiness = {
+			type = "scalar"
+			value = 0.2
+		}
+		specular = {
+			type = "scalar"
+			value = 0.2
+		}
+	}
+}

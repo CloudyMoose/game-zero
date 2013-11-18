@@ -1,0 +1,9 @@
+
+human = {
+	shader = "gui:DEPTH_TEST_ENABLED:DIFFUSE_MAP"
+	textures = {
+		diffuse_map = "core/editor_slave/human"
+	}
+	variables = {
+	}
+}

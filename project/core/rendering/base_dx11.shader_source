@@ -1,0 +1,620 @@
+hlsl_shaders = {
+	gbuffer_displacement_mapping_base = {		
+		includes = [ "common", "gbuffer_access", "skinning" ]	
+
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }				
+			}
+			defined_NORMAL_MAP = {
+				normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_MATERIAL_MAP = {
+				material_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}			
+			defined_SELF_ILLUMINATION_MAP = {
+				self_illumination_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}
+			
+			defined_MASKED_VC_BLEND = {
+				blend_diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }
+				blend_material_map = { sampler_states = "wrap_anisotropic_srgb" }
+				defined_NORMAL_MAP = {
+					blend_normal_map = { sampler_states = "wrap_anisotropic" }	
+				}
+			}
+			
+			defined_DETAIL_DIFFUSE_MAP = {
+				detail_diffuse_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_DETAIL_MATERIAL_MAP = {
+				detail_material_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}
+			defined_DETAIL_NORMAL_MAP = {
+				detail_normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			
+			height_map_sampler = { sampler_states = "wrap_linear" }
+			
+			defined_DETAILED_DISPLACEMENT_MAPPING = {
+				detail_displacement_map_sampler = { sampler_states = "wrap_linear" }
+			}
+		}
+		
+		code="""
+			#if defined(MASKED_VC_BLEND) || defined(VC_TINT_RGB) || defined(MASK_HEIGHT_MAP_WITH_VC_ALPHA)
+				#define VERTEX_COLOR
+			#endif
+			
+			#if defined(DETAIL_DIFFUSE_MAP) || defined(DETAIL_MATERIAL_MAP) || defined(DETAIL_NORMAL_MAP)
+				#define DETAIL_MAPPING
+			#endif
+		
+			#define RECONSTRUCT_BINORMAL
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float3 normal : NORMAL0;
+				SKIN_INPUT
+				float2 uv : TEXCOORD0;
+				#if defined(NORMAL_MAP)
+					float3 tangent : TANGENT;
+					float3 binormal : BINORMAL;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif				
+			};
+		
+			struct VS_OUTPUT_HS_INPUT {
+				float3 wp : WORLDPOS;
+				float2 uv : TEXCOORD0;
+				#if defined(NORMAL_MAP)
+					float3 tsm0 : TEXCOORD1;
+					float3 tsm1 : TEXCOORD2;
+					float3 tsm2 : TEXCOORD3;
+				#else
+					float3 normal : TEXCOORD1;
+				#endif
+				SKIN_INPUT
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif				
+			};				
+			
+			struct HS_CONSTANT_DATA_OUTPUT {
+				float edges[3] : SV_TessFactor;
+				float inside : SV_InsideTessFactor;					
+			};				
+		
+			struct HS_CONTROL_POINT_OUTPUT {
+				float3 wp : WORLDPOS;					
+				float2 uv : TEXCOORD0;					
+				#if defined(NORMAL_MAP)
+					#if defined(RECONSTRUCT_BINORMAL)
+						float3 tsm0 : TEXCOORD1;
+						float4 tsm1 : TEXCOORD2;
+					#else
+						float3 tsm0 : TEXCOORD1;
+						float3 tsm1 : TEXCOORD2;
+						float3 tsm2 : TEXCOORD3;
+					#endif					
+				#else
+					float3 normal : NORMAL;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif				
+				SKIN_INPUT
+			};	
+			
+			CBUFFER_START(c0)
+				float4x4 view_proj;
+				float4x4 world;				
+				float height_scale; // exports = { name="Displacement Scale" type="scalar" value=1.0 min=0.0 max=10 step=0.01 }
+				float tesselation_detail; // exports = { name="Tessellation Detail" type="scalar" value=1 min=0 max=2 step=0.001 }
+				float min_tesselation_factor; // exports = { name="Min Tessellation Factor" type="scalar" value=1 min=1 max=8 step=0.01 }
+				float patch_back_face_threshold; // exports = { name="Patch Back-face Threshold (put as low as possible)" type="scalar" value=0.5 min=0 max=1 step=0.001 }
+				#ifndef MATERIAL_MAP
+					float specular; // exports={ name="Specular Mask" type="scalar" value=0.8 min=0.0 max=1.0 step=0.001 }
+					float glossiness; // exports={ name="Glossiness Amount" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }	
+				#endif
+				#ifdef MASKED_VC_BLEND 
+					float masked_blend_smoothing; // exports={ name="Masked Blend Smoothing" type="scalar" value=0.2 min=0.001 max=1.0 step=0.001 sort_tag="3_MASKED_VC_BLEND4" }
+				#endif								
+				#if defined(DETAILED_DISPLACEMENT_MAPPING)					
+					float detail_height_scale; // exports = { name="Detail Displacement Scale" type="scalar" value=1.0 min=0.0 max=10 step=0.01 }
+				#endif
+				#if defined(PHONG_TESSELLATION)
+					float phong_shape_factor; // exports = { name="Phong Shape Factor" type="scalar" value=0.6 min=0.0 max=1 step=0.001 }
+				#endif
+				#if defined(DETAIL_MAPPING)
+					float2 detail_uv_scale; // exports={ name="Detail UV Scale" type="vector2" value=[5.0 5.0] min=[1 1] max=[40 40] step=[0.01 0.01] }					
+				#endif
+				#ifdef SELF_ILLUMINATION_MAP
+					float self_illumination_multiplier; // exports={ name="Self Illumination Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.01 }
+					#ifdef PULSATING_SELF_ILLUMINATION
+						float3 il_pulse_data; // exports={ name="Self Illumination Pulse [min/max/freq]" type="vector3" value=[0.5 1.0 1.0] min=[0 0 0] max=[1 1 10] step=[0.001 0.001 0.01] }
+					#endif					
+				#endif	
+				#if defined(MATERIAL_TINT_RGB) || defined(MATERIAL_TINT_RGB_MASKED) 
+					float3 tint_rgb; // exports={ name="Material Tint Color (x2)" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+				#endif
+			CBUFFER_END
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(NORMAL_MAP)
+				sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			#endif
+			
+			#if defined(MATERIAL_MAP)
+				sampler2D material_map; // exports={ name="Glossiness/Specular/Mask Map" type="resource" }
+			#endif
+			
+			#if defined(SELF_ILLUMINATION_MAP)		
+				sampler2D self_illumination_map; // exports={ name="Self Illumination Map" type="resource" }
+			#endif			
+			
+			#if defined(MASKED_VC_BLEND)
+				sampler2D blend_diffuse_map; // exports={ name="Blend Diffuse Map" type="resource" sort_tag="3_MASKED_VC_BLEND0" }
+				sampler2D blend_material_map; // exports={ name="Blend Material Map" type="resource" sort_tag="3_MASKED_VC_BLEND1" }
+				#if defined(NORMAL_MAP)
+					sampler2D blend_normal_map; // exports={ name="Blend Normal Map" type="resource" sort_tag="3_MASKED_VC_BLEND2" }
+				#endif
+			#endif			
+			
+			Texture2D height_map; // exports={ name="Height Map" type="resource" }
+			SamplerState height_map_sampler;					
+			
+			#if defined(DETAILED_DISPLACEMENT_MAPPING)
+				Texture2D detail_displacement_map; // exports={ name="Detail Displacement Map" type="resource" }
+				SamplerState detail_displacement_map_sampler;					
+			#endif
+
+			#if defined(DETAIL_DIFFUSE_MAP)		
+				sampler2D detail_diffuse_map; // exports={ name="Detail Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(DETAIL_NORMAL_MAP)
+				sampler2D detail_normal_map; // exports={ name="Detail Normal Map" type="resource" }
+			#endif
+			
+			#if defined(DETAIL_MATERIAL_MAP)
+				sampler2D detail_material_map; // exports={ name="Detail Glossiness/Specular/Mask Map" type="resource" }
+			#endif			
+						
+			VS_OUTPUT_HS_INPUT vs_main(VS_INPUT input) {
+				VS_OUTPUT_HS_INPUT o; 
+				
+				float3 normal;
+				#ifdef NORMAL_MAP
+					float3 tangent;
+					float3 binormal;
+				#endif
+				
+				#ifdef SKINNED
+					float4 op = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);
+					o.wp = mul(op, world).xyz;
+					o.blendindices = input.blendindices;
+					o.blendweights = input.blendweights;
+					normal = skin_vector(input.normal, input.blendindices, input.blendweights);
+					#ifdef NORMAL_MAP
+						tangent = skin_vector(input.tangent, input.blendindices, input.blendweights);
+						binormal = skin_vector(input.binormal, input.blendindices, input.blendweights);					
+					#endif
+				#else
+					o.wp = mul(input.position, world).xyz;
+					normal = input.normal;
+					#ifdef NORMAL_MAP
+						tangent = input.tangent;
+						binormal = input.binormal;						
+					#endif					
+				#endif
+				
+				o.uv = input.uv; 
+				
+				#ifdef NORMAL_MAP
+					tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, tangent, binormal, normal, (float3x3)world);	
+				#else
+					o.normal = mul(normal, (float3x3)world);
+				#endif			
+				
+				#if defined(VERTEX_COLOR)
+					o.color = input.color;
+				#endif
+				
+				return o;
+			}			
+			
+			inline float texture_mip(float2 p0, float2 p1, float2 uv0, float2 uv1, float2 tex_size) {
+				float2 dxy = abs(p0 - p1) + 0.0001;
+				float2 dst = abs(uv0 * tex_size - uv1 * tex_size);
+				float4 r = dst.xyxy / dxy.xxyy;				
+				float2 d = sqrt(float2(r.x*r.x + r.y*r.y, r.z*r.z + r.w*r.w));				
+				return min(log2(min(d.x, d.y)), 4);
+			}
+			
+			inline float texture_edge_distance(float2 uv0, float2 uv1, float tex_size, float mip_level) {
+				float2 mip_size = tex_size / exp(mip_level);				
+				return distance(uv0, uv1) * mip_size;				
+			
+			}
+			
+			/*
+			
+			inline float texture_edge_distance_gracing_angle_fixup(float2 uv0, float2 uv1, float3 v0, float3 v1, float tex_size, float mip_level) {				
+				float fixup = abs(dot(normalize(v0-v1), normalize(camera_pos-v1)));
+				mip_level *= (1-(pow(fixup, 40)*0.5));
+				
+				float2 mip_size = tex_size / exp(mip_level);
+				return distance(uv0, uv1) * mip_size;			
+			}			
+			
+			inline float2 texture_edge_distance(float2 p0, float2 p1, float2 uv0, float2 uv1, float2 tex_size) {
+				float2 dp = abs(p0 - p1) + 0.0001;
+				float2 dst = abs(uv0 * tex_size - uv1 * tex_size);
+				float4 dxy = dst.xyxy / dp.xxyy;				
+				float2 d = float2(sqrt(dxy.x*dxy.x + dxy.y*dxy.y), sqrt(dxy.z*dxy.z + dxy.w*dxy.w));
+				float mip_level = log2(min(d.x, d.y));
+				float2 mip_size = tex_size / exp(mip_level);
+				return distance(uv0 * mip_size, uv1 * mip_size);
+			}
+			
+			float edge_mip(float3 p0, float3 p1) {
+				float start_fade = 4;
+				float end_fade = 35;
+				float max_mip = 5;				
+				return max_mip * saturate((distance(p0+0.5*(p1-p0), camera_pos) - start_fade) / end_fade);
+			}
+			
+			*/			
+			
+			float3 edges_in_pixels(float3 v0, float3 v1, float3 v2, float2 uv0, float2 uv1, float2 uv2, out float3 edge_mips) {
+				// conservative back face culling
+				float back_face_threshold = -patch_back_face_threshold;
+				float3 face_normal = cross(normalize(v0-v1), normalize(v0-v2));
+				float patch_facing = dot(face_normal, normalize(camera_pos - v0));
+				if (patch_facing < back_face_threshold)
+					return float3(0,0,0);
+				
+				float2 half_res = back_buffer_size * 0.5;				
+				float frustum_extrude_pixels = 256;				
+				float4 clip_rect = float4(-half_res.x-frustum_extrude_pixels, -half_res.y-frustum_extrude_pixels, half_res.x + frustum_extrude_pixels, half_res.y + frustum_extrude_pixels);								
+				
+				float4 p0 = mul(float4(v0, 1), view_proj);
+				p0.w = max(p0.w, 0.00001);
+				p0.xy = (p0.xy / p0.w) * half_res;				
+				float4 p1 = mul(float4(v1, 1), view_proj);				
+				p1.w = max(p1.w, 0.00001);
+				p1.xy = (p1.xy / p1.w) * half_res;
+				float4 p2 = mul(float4(v2, 1), view_proj);
+				p2.w = max(p2.w, 0.00001);
+				p2.xy = (p2.xy / p2.w) * half_res;				
+				
+				// view frustum culling
+				bool near_rejected = dot(float3(p0.z,p1.z,p2.z) < 0, 1) == 3;
+				bool left_rejected = dot(float3(p0.x,p1.x,p2.x) < clip_rect.x, 1) == 3;
+				bool right_rejected = dot(float3(p0.x,p1.x,p2.x) > clip_rect.z, 1) == 3;
+				bool top_rejected = dot(float3(p0.y,p1.y,p2.y) > clip_rect.w, 1) == 3;
+				bool bottom_rejected = dot(float3(p0.y, p1.y, p2.y) < clip_rect.y, 1) == 3;				
+				bool culled = (near_rejected || left_rejected || right_rejected || top_rejected || bottom_rejected);
+				if (culled)
+					return float3(0,0,0);				
+					
+				//uv0 = uv0 - floor(uv0);
+				//uv1 = uv1 - floor(uv1);
+				//uv2 = uv2 - floor(uv2);
+				
+				float2 disp_size;
+				height_map.GetDimensions(disp_size.x, disp_size.y);				
+				edge_mips = float3(texture_mip(p2.xy, p1.xy, uv2, uv1, disp_size), texture_mip(p2.xy, p0.xy, uv2, uv0, disp_size), texture_mip(p1.xy, p0.xy, uv1, uv0, disp_size));
+				return float3(texture_edge_distance(uv2, uv1, disp_size, edge_mips.x), texture_edge_distance(uv2, uv0, disp_size, edge_mips.y), texture_edge_distance(uv1, uv0, disp_size, edge_mips.z));
+			}		
+			
+			#define MAX_TESSELLATION_FACTOR 48
+			
+			HS_CONSTANT_DATA_OUTPUT hs_constants(InputPatch<VS_OUTPUT_HS_INPUT, 3> p, uint patch_id : SV_PrimitiveID )
+			{
+				HS_CONSTANT_DATA_OUTPUT output = (HS_CONSTANT_DATA_OUTPUT)0;
+				
+				float4 tessellation_factors = float4(1,1,1,1);
+				if (g_tessellation > 0) {
+					float3 mips;
+					float3 e = (tesselation_detail * edges_in_pixels(p[0].wp, p[1].wp, p[2].wp, p[0].uv, p[1].uv, p[2].uv, mips)) / g_tessellation_tri_size;
+					e = dot(e, 1) == 0 ? 0 : max(e, min_tesselation_factor);					
+					
+					// we need this clamp to ensure deterministic tessellation levels between ATI & NV since
+					// currently MS and NV does not honor [maxtessfactor()]
+					e = min(e, MAX_TESSELLATION_FACTOR * g_tessellation_detail);
+					float inside_tess = max(max(e.x, e.y),e.z);					
+					tessellation_factors = float4(e, inside_tess);
+				}			
+				
+				// Assign tessellation levels
+				output.edges[0] = tessellation_factors.x;
+				output.edges[1] = tessellation_factors.y;
+				output.edges[2] = tessellation_factors.z;
+				output.inside = tessellation_factors.w;				
+
+				return output;
+			}
+
+			[domain("tri")]
+			[partitioning("fractional_odd")]
+			[outputtopology("triangle_cw")]
+			[outputcontrolpoints(3)]
+			[patchconstantfunc("hs_constants")]
+			[maxtessfactor(MAX_TESSELLATION_FACTOR)]			
+			HS_CONTROL_POINT_OUTPUT hs_main(InputPatch<VS_OUTPUT_HS_INPUT, 3> inputPatch, uint cp_id : SV_OutputControlPointID )
+			{
+				HS_CONTROL_POINT_OUTPUT	output = (HS_CONTROL_POINT_OUTPUT)0;					
+				
+				output.wp =	inputPatch[cp_id].wp.xyz;
+				output.uv = inputPatch[cp_id].uv;
+				#ifdef NORMAL_MAP
+					#if defined(RECONSTRUCT_BINORMAL)					
+						output.tsm0 = inputPatch[cp_id].tsm0;
+						output.tsm1.xyz = inputPatch[cp_id].tsm1;					
+						float3 tsm2 = cross(inputPatch[cp_id].tsm0, inputPatch[cp_id].tsm1);
+						output.tsm1.w = dot(tsm2, inputPatch[cp_id].tsm2) < 0 ? -1 : 1;										
+					#else
+						output.tsm0 = inputPatch[cp_id].tsm0;
+						output.tsm1 = inputPatch[cp_id].tsm1;
+						output.tsm2 = inputPatch[cp_id].tsm2;					
+					#endif
+				#else
+					output.normal = inputPatch[cp_id].normal;
+				#endif
+				
+				#ifdef SKINNED
+					output.blendindices = inputPatch[cp_id].blendindices;
+					output.blendweights = inputPatch[cp_id].blendweights;
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					output.color = inputPatch[cp_id].color;
+				#endif
+				
+				return output;
+			}
+			
+			struct DS_OUTPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				#if defined(NORMAL_MAP)
+					float3 tsm0 : TEXCOORD1;
+					float3 tsm1 : TEXCOORD2;
+					float3 tsm2 : TEXCOORD3;					
+				#else
+					float3 normal : TEXCOORD1;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif				
+				
+				#if defined(USE_DEPTH_RT)
+					float depth : TEXCOORD4;
+				#endif
+			};		
+			
+			[domain("tri")]
+			DS_OUTPUT ds_main( HS_CONSTANT_DATA_OUTPUT input, float3 barycentric_coordinates : SV_DomainLocation, const OutputPatch<HS_CONTROL_POINT_OUTPUT, 3> triangle_patch )
+			{
+				DS_OUTPUT output = (DS_OUTPUT)0;
+				
+				#ifdef NORMAL_MAP
+					#if defined(RECONSTRUCT_BINORMAL)					
+						output.tsm0 = normalize(barycentric_coordinates.x * triangle_patch[0].tsm0 + barycentric_coordinates.y * triangle_patch[1].tsm0 + barycentric_coordinates.z * triangle_patch[2].tsm0);
+						
+						float4 tsm1 = barycentric_coordinates.x * triangle_patch[0].tsm1 + barycentric_coordinates.y * triangle_patch[1].tsm1 + barycentric_coordinates.z * triangle_patch[2].tsm1;
+						output.tsm1 = normalize(tsm1.xyz);						
+						output.tsm2 = cross(output.tsm0, output.tsm1.xyz) * tsm1.w;
+						float3 normal = normalize(float3(output.tsm0.z, output.tsm1.z, output.tsm2.z));
+					#else
+						output.tsm0 = normalize(barycentric_coordinates.x * triangle_patch[0].tsm0 + barycentric_coordinates.y * triangle_patch[1].tsm0 + barycentric_coordinates.z * triangle_patch[2].tsm0);
+						output.tsm1 = normalize(barycentric_coordinates.x * triangle_patch[0].tsm1 + barycentric_coordinates.y * triangle_patch[1].tsm1 + barycentric_coordinates.z * triangle_patch[2].tsm1);
+						output.tsm2 = normalize(barycentric_coordinates.x * triangle_patch[0].tsm2 + barycentric_coordinates.y * triangle_patch[1].tsm2 + barycentric_coordinates.z * triangle_patch[2].tsm2);
+						float3 normal = normalize(float3(output.tsm0.z, output.tsm1.z, output.tsm2.z));					
+					#endif
+				#else
+					float3 normal = normalize(barycentric_coordinates.x * triangle_patch[0].normal + barycentric_coordinates.y * triangle_patch[1].normal + barycentric_coordinates.z * triangle_patch[2].normal);
+				#endif
+				
+				float2 uv = barycentric_coordinates.x * triangle_patch[0].uv + barycentric_coordinates.y * triangle_patch[1].uv + barycentric_coordinates.z * triangle_patch[2].uv;
+				output.uv = uv;	
+				
+				#if defined(VERTEX_COLOR)
+					float4 color = barycentric_coordinates.x * triangle_patch[0].color + barycentric_coordinates.y * triangle_patch[1].color + barycentric_coordinates.z * triangle_patch[2].color;
+					output.color = color;
+				#endif								
+				
+				float3 wp;
+				if (g_tessellation > 0) {
+					#if defined(PHONG_TESSELLATION)				
+						float3 p = barycentric_coordinates.x * triangle_patch[0].wp + barycentric_coordinates.y * triangle_patch[1].wp + barycentric_coordinates.z * triangle_patch[2].wp;	
+						#ifdef NORMAL_MAP
+							#if defined(RECONSTRUCT_BINORMAL)							
+								float3 tsm20 = cross(triangle_patch[0].tsm0, triangle_patch[0].tsm1.xyz) * triangle_patch[0].tsm1.w;
+								float3 tsm21 = cross(triangle_patch[1].tsm0, triangle_patch[1].tsm1.xyz) * triangle_patch[1].tsm1.w;
+								float3 tsm22 = cross(triangle_patch[2].tsm0, triangle_patch[2].tsm1.xyz) * triangle_patch[2].tsm1.w;
+								
+								float3 n0 = float3(triangle_patch[0].tsm0.z, triangle_patch[0].tsm1.z, tsm20.z);
+								float3 n1 = float3(triangle_patch[1].tsm0.z, triangle_patch[1].tsm1.z, tsm21.z);
+								float3 n2 = float3(triangle_patch[2].tsm0.z, triangle_patch[2].tsm1.z, tsm22.z);
+							#else
+								float3 n0 = float3(triangle_patch[0].tsm0.z, triangle_patch[0].tsm1.z, triangle_patch[0].tsm2.z);
+								float3 n1 = float3(triangle_patch[1].tsm0.z, triangle_patch[1].tsm1.z, triangle_patch[1].tsm2.z);
+								float3 n2 = float3(triangle_patch[2].tsm0.z, triangle_patch[2].tsm1.z, triangle_patch[2].tsm2.z);
+							#endif
+						#else
+							float3 n0 = triangle_patch[0].normal;
+							float3 n1 = triangle_patch[1].normal;
+							float3 n2 = triangle_patch[2].normal;
+						#endif
+						float3 p0 = p - dot((p-triangle_patch[0].wp), n0) * n0;
+						float3 p1 = p - dot((p-triangle_patch[1].wp), n1) * n1;
+						float3 p2 = p - dot((p-triangle_patch[2].wp), n2) * n2;
+						wp = lerp(p, barycentric_coordinates.x * p0 + barycentric_coordinates.y * p1 + barycentric_coordinates.z * p2, phong_shape_factor);					
+					#else
+						wp = barycentric_coordinates.x * triangle_patch[0].wp + barycentric_coordinates.y * triangle_patch[1].wp + barycentric_coordinates.z * triangle_patch[2].wp;	
+					#endif
+
+					float start_fade = 4;
+					float end_fade = 35;
+					float max_mip = 5;				
+					float heightmap_mip_level = max_mip * saturate((distance(wp, camera_pos) - start_fade) / end_fade);
+
+					//height_scale *= g_tessellation;
+					
+					// Sample normal and height map
+					#ifdef HEIGHT_MAP_DISPLACEMENT
+						float height = 2 * (height_map.SampleLevel(height_map_sampler, uv, heightmap_mip_level).a - 0.5);
+						#if defined(MASK_HEIGHT_MAP_WITH_VC_ALPHA)
+							height *= color.a;
+						#endif
+						float3 displacement_vector = normal.xyz * height * height_scale;					
+					#else					
+						float3 delta = height_map.SampleLevel(height_map_sampler, uv, heightmap_mip_level).rgb * height_scale;					
+						
+						#ifdef SKINNED
+							IndexType blend_indices = barycentric_coordinates.x * triangle_patch[0].blendindices + barycentric_coordinates.y * triangle_patch[1].blendindices + barycentric_coordinates.z * triangle_patch[2].blendindices;
+							WeightType blend_weights = barycentric_coordinates.x * triangle_patch[0].blendweights + barycentric_coordinates.y * triangle_patch[1].blendweights + barycentric_coordinates.z * triangle_patch[2].blendweights;
+							delta = skin_displacement_delta(delta, blend_indices, blend_weights);
+						#endif					
+						float3 displacement_vector = mul(delta, (float3x3)world);					
+					#endif
+					
+					#if defined(DETAILED_DISPLACEMENT_MAPPING)
+						#if defined(DETAIL_DISPLACEMENT_FROM_ALPHA)
+							float detail_disp = detail_displacement_map.SampleLevel(detail_displacement_map_sampler, uv, 0).a;
+						#else
+							float detail_disp = detail_displacement_map.SampleLevel(detail_displacement_map_sampler, uv, 0).b;					
+						#endif
+						float detail_height = 2 * detail_disp - 1;
+						displacement_vector += normal.xyz * detail_height * detail_height_scale;				
+					#endif
+					
+					wp += displacement_vector;		
+				} else {
+					wp = barycentric_coordinates.x * triangle_patch[0].wp + barycentric_coordinates.y * triangle_patch[1].wp + barycentric_coordinates.z * triangle_patch[2].wp;	
+				}
+				
+				// Transform world position with viewprojection matrix
+				output.position = mul( float4(wp.xyz, 1.0), view_proj );					
+				#ifdef USE_DEPTH_RT
+					output.depth = output.position.z + camera_near_far.x;
+				#endif
+				return output;
+			}	
+			
+			#ifdef DRAW_WIREFRAME
+				float4 ps_main(DS_OUTPUT input) : SV_TARGET0 {
+					return float4(1,0,0,0);
+				}			
+			#else
+				GBUFFER_OUT ps_main(DS_OUTPUT input) {
+					GBUFFER_OUT o;
+					
+					#ifdef USE_DEPTH_RT
+						DEPTH(o) = gbuffer_encode_depth(input.depth);
+					#endif
+	
+					#ifdef MATERIAL_MAP
+						float3 gsm = tex2D(material_map, input.uv).rgb;
+						float2 specular_glossiness = float2(gsm.g, gsm.r);
+					#else
+						float2 specular_glossiness = float2(specular, glossiness);
+					#endif
+					
+					#ifdef DETAIL_MAPPING
+						float2 detail_uv = input.uv * detail_uv_scale;
+						
+						#ifdef DETAIL_MATERIAL_MAP
+							float3 detail_gsm = tex2D(detail_material_map, detail_uv).rgb * 2;
+							specular_glossiness *= float2(detail_gsm.g, detail_gsm.r);
+						#endif
+					#endif
+									
+					#ifdef DIFFUSE_MAP					
+						float3 albedo = tex2D(diffuse_map, input.uv).rgb;
+					#else
+						float3 albedo = half3(0.6,0.6,0.6);
+					#endif
+					
+					#if defined(MASKED_VC_BLEND)
+						half3 layer0_gsm = tex2D(blend_material_map, input.uv);								
+						half first_layer_blend = smoothstep(saturate(gsm.b - masked_blend_smoothing), gsm.b, input.color.a);
+						albedo = lerp(albedo, tex2D(blend_diffuse_map, input.uv), first_layer_blend);
+						specular_glossiness = lerp(specular_glossiness, layer0_gsm.gr, first_layer_blend);						
+					#endif
+					
+					#ifdef DETAIL_DIFFUSE_MAP
+						float3 detail_diffuse = tex2D(detail_diffuse_map, detail_uv).rgb * 2;
+						albedo *= detail_diffuse;
+					#endif					
+					
+					#ifdef VC_TINT_RGB
+						albedo *= fast_gamma_to_linear_rgb(input.color.rgb);
+					#endif
+					
+					#ifdef MATERIAL_TINT_RGB
+						albedo *= tint_rgb * 2;
+					#endif
+					
+					#ifdef MATERIAL_TINT_RGB_MASKED
+						albedo = lerp(albedo, albedo * tint_rgb * 2, gsm.b);
+					#endif
+					
+					ALBEDO(o) = gbuffer_encode_albedo(albedo);
+					
+					float3 normal;
+					#ifdef NORMAL_MAP  					
+						float3 tnormal = decode_normal_map(tex2D(normal_map, input.uv));
+						#if defined(MASKED_VC_BLEND)					
+							half3 first_layer_tnormal = decode_normal_map(tex2D(blend_normal_map, input.uv));						
+							tnormal = lerp(tnormal, first_layer_tnormal, first_layer_blend);
+						#endif						
+						
+						#ifdef DETAIL_NORMAL_MAP
+							float3 detail_tnormal = decode_normal_map(tex2D(detail_normal_map, detail_uv));
+							tnormal = half3(tnormal.xy + detail_tnormal.xy, tnormal.z * detail_tnormal.z);							
+						#endif
+						
+						normal = rotate_vector3(tnormal, input.tsm0, input.tsm1, input.tsm2);						
+					#else										
+						normal = normalize(input.normal);
+					#endif				
+					
+					NORMAL(o) = gbuffer_encode_normal(normal);
+					
+					SPECULAR(o) = gbuffer_encode_specular_mask(specular_glossiness.x);
+					GLOSSINESS(o) = gbuffer_encode_glossiness(specular_glossiness.y);				
+					
+					#ifdef SELF_ILLUMINATION_MAP
+						float4 il = tex2D(self_illumination_map, input.uv);
+						#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+							il.rgb *= tint_rgb;
+						#endif
+						
+						il.rgb *= self_illumination_multiplier;
+						
+						#ifdef PULSATING_SELF_ILLUMINATION
+							// TODO: make this cheaper	
+							float p = il_pulse_data.x + (sin(time * il_pulse_data.z + il.a * 6.28) * 0.5 + 0.5) * (il_pulse_data.y - il_pulse_data.x);
+							il.rgb *= p;
+						#endif						
+					
+						LIGHT_ACCUMULATION(o) = gbuffer_encode_self_illumination(half4(il.rgb,0));
+					#endif
+					
+					GBUFFER_AUX(o) = half4(0, 0, 0, 1);
+					
+					return o;
+				} 
+			#endif			
+		"""
+	}	
+}

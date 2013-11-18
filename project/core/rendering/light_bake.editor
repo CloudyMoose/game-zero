@@ -1,0 +1,9 @@
+
+"#ID[c20b30fe1e64d6b4]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "ao_sun_bake_stream_out"
+	variables = [
+	]
+}

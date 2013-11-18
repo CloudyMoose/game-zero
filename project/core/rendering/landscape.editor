@@ -1,0 +1,93 @@
+
+"#ID[0fc3b226b03aeeac]" = {
+	defines = "SUB"
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[113ff973fe6e19de]" = {
+	defines = "SAMPLE_BASED FLATTEN"
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[159c8192e3759fb3]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "landscape_editor_brush_marker"
+	variables = [
+	]
+}
+"#ID[2e93ce28ce8f3a0c]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "landscape"
+	variables = [
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "0_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "0_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+	]
+}
+"#ID[67d2cf70dd5b3cce]" = {
+	defines = "SAMPLE_BASED BOX_FILTER"
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[8781b66cb130fe37]" = {
+	defines = "SAMPLE_HEIGHT"
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[a7cbc95494457305]" = {
+	defines = "SAMPLE_BASED SAMPLE"
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[cc481d2f3d200ca8]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "landscape_editor_brush"
+	variables = [
+	]
+}
+"#ID[de8bf7dd23371e0a]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "landscape_undergrowth"
+	variables = [
+	]
+}

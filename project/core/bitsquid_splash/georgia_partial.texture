@@ -1,0 +1,110 @@
+
+input = [
+	{
+		texture = "core/bitsquid_splash/georgia_partial.dds"
+	}
+]
+output = {
+	android = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "A8R8G8B8"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	ios = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "PVRTC_RGB4"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	macosx = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "A8R8G8B8"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	ps3 = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "A8R8G8B8"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	win32 = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0.5
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "A8R8G8B8"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+	x360 = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "A8R8G8B8"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = false
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+}

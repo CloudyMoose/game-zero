@@ -1,0 +1,555 @@
+
+"#ID[004f4b6c9c2324bc]" = {
+	defines = "OMNI SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "mobile_light"
+	variables = [
+	]
+}
+"#ID[18c978027a987334]" = {
+	defines = "DIRECTION_X STEP1"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[1c50533fd13c5866]" = {
+	defines = "SPOT SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "mobile_light"
+	variables = [
+	]
+}
+"#ID[21b1f5ac4d72de57]" = {
+	defines = "FILL"
+	semantics = [
+	]
+	shader = "global_shadow_mask"
+	variables = [
+	]
+}
+"#ID[2588aaa2df548b85]" = {
+	defines = "SKIN"
+	semantics = [
+	]
+	shader = "global_lighting"
+	variables = [
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Ambient Top Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.2
+				0.2
+				0.2
+			]
+			variable = "ambient_top_color"
+		}
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Ambient Bottom Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.1
+				0.1
+				0.1
+			]
+			variable = "ambient_bottom_color"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Ambient Camera Falloff"
+			step = 0.001
+			type = "scalar"
+			value = 0.25
+			variable = "ambient_camera_falloff"
+		}
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Sun Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				1
+				1
+				1
+			]
+			variable = "sun_color"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				-1
+				-1
+				-1
+			]
+			name = "Sun Direction"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0
+				0
+				-1
+			]
+			variable = "sun_direction"
+		}
+	]
+}
+"#ID[282df03f176914b5]" = {
+	defines = "APPLY_DEBUG_OVERLAY"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[358d04d953c4dd0b]" = {
+	defines = "DIRECTION_Y STEP0"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[3631dd8560af0895]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "debug_render_voxels"
+	variables = [
+	]
+}
+"#ID[3fe3f8714d10e3e0]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "beckmann_distribution_lut"
+	variables = [
+	]
+}
+"#ID[41090a245453290f]" = {
+	defines = "SHADOW_MASK"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[415b2e213bef7d73]" = {
+	defines = "FILL_UNTOUCHED_PIXELS"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[4755702c26bd52fb]" = {
+	defines = "ALPHA_TO_RGB"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[48f199fb50ed510b]" = {
+	defines = "BLEND STEP0"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[4c17da9a5f043722]" = {
+	defines = "DIRECTION_X STEP2"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[54c8c9ce40a9e1e1]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "linearize_depth"
+	variables = [
+	]
+}
+"#ID[559eb220345d4156]" = {
+	defines = "SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "spot_light"
+	variables = [
+	]
+}
+"#ID[58624f9c2c1def27]" = {
+	defines = "SKIN SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "omni_light"
+	variables = [
+	]
+}
+"#ID[72f74b752029b7b9]" = {
+	defines = "FILL_ALBEDO"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[76ac9d36e95cf293]" = {
+	defines = "DIRECTION_X STEP0"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[90f45e0bb6472064]" = {
+	defines = "SKIN SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "spot_light"
+	variables = [
+	]
+}
+"#ID[95f2ef70c926ed4b]" = {
+	defines = "SKIN"
+	semantics = [
+	]
+	shader = "omni_light"
+	variables = [
+	]
+}
+"#ID[965bf283da32d282]" = {
+	defines = "DIRECTION_Y STEP1"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[9746fde62ddcb22d]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "shadow_cutter"
+	variables = [
+	]
+}
+"#ID[987ed2c12de0a2ea]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "skin_filter_cheap"
+	variables = [
+	]
+}
+"#ID[a002d9c1718af7fe]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "global_lighting"
+	variables = [
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Ambient Top Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.2
+				0.2
+				0.2
+			]
+			variable = "ambient_top_color"
+		}
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Ambient Bottom Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.1
+				0.1
+				0.1
+			]
+			variable = "ambient_bottom_color"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Ambient Camera Falloff"
+			step = 0.001
+			type = "scalar"
+			value = 0.25
+			variable = "ambient_camera_falloff"
+		}
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Sun Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				1
+				1
+				1
+			]
+			variable = "sun_color"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				-1
+				-1
+				-1
+			]
+			name = "Sun Direction"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0
+				0
+				-1
+			]
+			variable = "sun_direction"
+		}
+	]
+}
+"#ID[a27b65c72af4919f]" = {
+	defines = "AMBIENT_OCCLUSION"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[b30f413c35670e44]" = {
+	defines = "SHADOW_MAPPING"
+	semantics = [
+	]
+	shader = "omni_light"
+	variables = [
+	]
+}
+"#ID[b36d9d5117458cf6]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "spot_light"
+	variables = [
+	]
+}
+"#ID[bb2b7176ef90d24d]" = {
+	defines = "LUMINANCE"
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[bd6570736df61363]" = {
+	defines = "DIRECTION_Y STEP2"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[c32c69848c42d64e]" = {
+	defines = "BLEND STEP1"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[c95a62fba00d504e]" = {
+	defines = "SUN_OCCLUSION"
+	semantics = [
+	]
+	shader = "ao_integrator"
+	variables = [
+	]
+}
+"#ID[c9d892ffec0747d6]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "gbuffer_debug"
+	variables = [
+	]
+}
+"#ID[cfda55e35e786596]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "omni_light"
+	variables = [
+	]
+}
+"#ID[d302dc9b84585625]" = {
+	defines = "SPOT"
+	semantics = [
+	]
+	shader = "mobile_light"
+	variables = [
+	]
+}
+"#ID[d633f93305b4f4c3]" = {
+	defines = "BLEND STEP2"
+	semantics = [
+	]
+	shader = "skin_filter"
+	variables = [
+	]
+}
+"#ID[e5e4aaf274877de9]" = {
+	defines = "OMNI"
+	semantics = [
+	]
+	shader = "mobile_light"
+	variables = [
+	]
+}
+"#ID[e92d1ab1cbf5a21a]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "ao_source"
+	variables = [
+	]
+}
+"#ID[edd8472d0f42f31c]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "ao_integrator"
+	variables = [
+	]
+}
+"#ID[f0e62ba3360425de]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "ao_cone_trace"
+	variables = [
+	]
+}
+"#ID[f2e32d918b8b3500]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "global_shadow_mask"
+	variables = [
+	]
+}
+"#ID[f32de244f6e21bfb]" = {
+	defines = "SKIN"
+	semantics = [
+	]
+	shader = "spot_light"
+	variables = [
+	]
+}

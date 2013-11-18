@@ -1,0 +1,135 @@
+dof_far = {
+	shader = "dof_apply"
+	variables = {
+		amount = {
+			type = "scalar"
+			value = 0
+		}
+		far = {
+			type = "vector2"
+			value = [
+				18.9
+				9
+			]
+		}
+	}
+}
+dof_near = {
+	shader = "dof_initial_downsample"	
+	variables = {
+		near = {
+			type = "vector2"
+			value = [
+				3.2
+				1.6
+			]
+		}
+		far = {
+			type = "vector2"
+			value = [
+				18.9
+				9
+			]
+		}		
+	}
+}
+
+fog = {
+	shader = "depth_fog"
+	textures = {
+	}
+	variables = {
+		depth_range = {
+			type = "vector2"
+			value = [
+				5
+				617
+			]
+		}
+		fog_color = {
+			type = "vector3"
+			value = [
+				0.612244897959184
+				0.777310924369748
+				1.44357743097239
+			]
+		}
+		sun_blend = {
+			type = "vector3"
+			value = [
+				1
+				8
+				1
+			]
+		}
+	}
+}
+global_lighting = {
+	shader = "global_lighting"
+	textures = {
+	}
+	variables = {
+	}
+}
+global_lighting_skin = {
+	shader = "global_lighting:SKIN"
+	textures = {
+	}
+	variables = {
+	}
+}
+global_shadow_mask_fill = {
+	shader = "global_shadow_mask:FILL"
+}
+global_shadow_mask= {
+	shader = "global_shadow_mask"
+}
+
+global_shadow_mask_slice0 = {
+	shader = "global_shadow_mask"
+}
+global_shadow_mask_slice1= {
+	shader = "global_shadow_mask"
+}
+global_shadow_mask_slice2 = {
+	shader = "global_shadow_mask"
+}
+
+shadow_cutter = {
+	shader = "shadow_cutter"
+}
+
+shadow_cutter_slice0 = {
+	shader = "shadow_cutter"
+}
+shadow_cutter_slice1 = {
+	shader = "shadow_cutter"
+}
+shadow_cutter_slice2 = {
+	shader = "shadow_cutter"
+}
+
+ssao_upscale = {
+	shader = "ssao_upscale"
+}
+tone_mapping = {
+	shader = "tone_mapping"
+	textures = {
+	}
+	variables = {
+		bright_pass_threshold_offset = {
+			type = "vector2"
+			value = [
+				0.2
+				0.1
+			]
+		}
+		exposure = {
+			type = "scalar"
+			value = 1.333
+		}
+	}
+}
+vo_ssao = {
+	shader = "vo_ssao"
+}

@@ -1,0 +1,100 @@
+
+settings = {
+	default = {
+		editor_variables = {
+			shadow_slice_depth_ranges = [
+				0
+				150
+				0.345
+			]
+		}
+		variables = {
+			ambient_bottom_color = [
+				0.316990388766519
+				0.321394268711493
+				0.279802069231183
+			]
+			ambient_camera_falloff = 0.5
+			ambient_color = [
+				0.0386949942910248
+				0.0386949942910248
+				0.0386949942910248
+			]
+			ambient_top_color = [
+				0.443233602275894
+				0.480778095645147
+				0.50233141591268
+			]
+			bloom_exposure = 0.5
+			bloom_threshold_offset = [
+				0.95
+				0.1
+			]
+			cube_environment_intensity = 0.8
+			depth_blur_amount = 0
+			depth_blur_setting = [
+				32
+				10
+			]
+			dof_amount = 0
+			dof_far_setting = [
+				40
+				75
+			]
+			dof_near_setting = [
+				3.2
+				0.001
+			]
+			emissive_particle_intensity = 3
+			exposure = 0.3
+			fog_color = [
+				1.03464900229911
+				1.13429235354652
+				1.22714183993616
+			]
+			fog_depth_range = [
+				60
+				1750
+			]
+			fog_sun_blend = [
+				1
+				8
+				1
+			]
+			luminance_adaption = [
+				0.6
+				0.075
+				1
+			]
+			rim_tint = [
+				1
+				1
+				1
+			]
+			shadow_slice_depth_ranges = [
+				0
+				13.279628100124
+				13.279628100124
+				28.3463040917659
+				28.3463040917659
+				54.5343684322624
+				54.5343684322624
+				149.9345
+			]
+			ssao_max_disstance = 1.5
+			ssao_radius = 0.4
+			ssao_strength = 2
+			sun_color = [
+				3.99594002306806
+				4
+				3.65490196078432
+			]
+			sun_direction = [
+				0.212452694976971
+				-0.173824932253886
+				-0.96158657713383
+			]
+		}
+	}
+}
+template = "core/rendering/outdoor_advanced.shading_environment_template"

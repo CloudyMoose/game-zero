@@ -1,0 +1,2745 @@
+includes = [ "core/rendering/common.shader_source" ] 
+
+render_states = {
+	filter = {
+		inherits = "default"
+		states = {
+			z_write_enable = "false"
+			z_enable = "false"
+		}
+	}
+
+	depth_fog = {
+		inherits = "opacity"
+		states = {
+			z_func = "greater"
+		}
+	}
+	
+	ssao_upscale = {
+		inherits = "filter"
+		states = {
+			ndefined_X360 = {
+				blend_enable = "true"
+				write_mask0 = "alpha"
+				blend_op = "blend_op_min"
+				dest_blend = "blend_one"
+				src_blend = "blend_one"
+			}
+		}
+	}	
+}
+
+hlsl_shaders = {	
+	cs_gaussian_blur = {		
+		includes = [ "common", "gbuffer_access" ]
+		code="""
+			RWTexture2D<float4> input_texture0; 			
+			Texture2D<float4> input_texture1;
+			
+			cbuffer c0 {
+				float2 input_texture1_size;
+			};
+			
+			#define NUM_THREADS 128
+			
+			groupshared float4 gs_row[NUM_THREADS];
+			
+			[numthreads(NUM_THREADS, 1, 1 )]
+			void cs_main(uint3 group_id : SV_GroupID, uint3 group_thread_id : SV_GroupThreadID, uint group_index : SV_GroupIndex) {
+				float kernel_half = 32;				
+				int2 uv = int2(group_index - kernel_half + (NUM_THREADS - kernel_half * 2) * group_id.x, group_id.y);
+				uv = clamp(uv, int2(0,0), int2(input_texture1_size.x-1, input_texture1_size.y-1));
+				gs_row[group_index] = input_texture1.Load(int3(uv, 0));
+				GroupMemoryBarrierWithGroupSync();
+				
+				if (group_index >= kernel_half && group_index < (NUM_THREADS - kernel_half) &&
+					((group_id.x * (NUM_THREADS - 2 * kernel_half) + group_index - kernel_half) < input_texture1_size.x))
+				{
+					float4 c = 0;
+					//float total_weight = 0;
+					[unroll]
+					for (int i = -kernel_half; i <= kernel_half; ++i) {
+						//float weight = exp( -((i*i) / 2.0) ) / sqrt(2.0 * 3.14159);
+						//total_weight += weight;
+						c += gs_row[group_index + i];
+					}
+					c /= (2*kernel_half + 1);
+					//c /= total_weight;
+					input_texture0[uint2(group_index - kernel_half + (NUM_THREADS - kernel_half * 2) * group_id.x, group_id.y)] = c;				
+				}
+				
+				/*
+				uint2 uv = uint2(group_thread_id.x, group_id.y);
+				gs_row[group_thread_id.x] = input_texture1.Load(int3(uv, 0));
+				GroupMemoryBarrierWithGroupSync();
+				
+				float4 c = float4(0,0,0,0);
+				for (int i = -HALF_KERNEL; i <= HALF_KERNEL; i++) {
+					int offset = group_thread_id.x + i;
+					offset = clamp(offset, 0, 320-1);
+					c += gs_row[offset] / (HALF_KERNEL * 2 + 1);
+				}
+				input_texture0[uint2(group_thread_id.x, group_id.y)] = c;				
+				*/
+			}
+		"""
+	}		
+
+	copy = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			ndefined_INTERLEAVE_BUFFER = {
+				input_texture0 = { sampler_states = "clamp_linear" }	
+			}
+		}
+		 
+		code="""
+			#if defined(INTERLEAVE_BUFFER)
+				StructuredBuffer<float> input_texture0;
+			#else
+				sampler2D input_texture0;
+			#endif
+			//samplerCUBE input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+				#if defined(INTERLEAVE_BUFFER)
+					float2 input_texture0_size;
+				#else
+					float2 inv_input_texture0_size;
+				#endif
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#if defined(INTERLEAVE_BUFFER)				
+					float2 res = input_texture0_size;
+					res.y /= 4;
+					
+					//uint2 pixel_pos = floor(input.uv * uint2(res.x, res.y));
+					uint2 pixel_pos = input.position.xy; //floor(input.uv * uint2(res.x, res.y));
+					uint buff_index = pixel_pos.y*res.x + pixel_pos.x;
+					uint stride = res.x * res.y;
+
+					return float4(input_texture0[buff_index + 0], input_texture0[buff_index + 1 * stride], input_texture0[buff_index + 2 * stride], input_texture0[buff_index + 3 * stride]);
+				#else
+					float4 c = tex2D(input_texture0, input.uv);
+					#ifdef ALPHA_TO_RGB
+						c.rgb = c.aaa;
+					#endif
+					#ifdef ENCODE_AS_RGBM
+						c = rgbm_encode(c.rgb);
+					#endif					
+					return c;
+				#endif
+			}	
+		"""
+	}
+
+	luminance_adaption = {
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }	
+			input_texture1 = { sampler_states = "clamp_linear" }
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float3 adaption_settings; // exports={ name="Luminance Adaption [speed, min, max]" type="vector3" value=[0.6 0.075 1] min=[0.01 0.001 0.0015] max=[3 5 5] step=[0.0001 0.0001 0.0001] }
+				float reset_adaption; // exports={ name="Reset Adaption" type="scalar" value=0 min=0 max=1 step=1 }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float adapted_luminance = tex2D(input_texture1, input.uv).r;				
+				float current_luminance = exp(tex2Dlod(input_texture0, float4(input.uv,0,10)).r);
+				current_luminance = clamp(current_luminance, adaption_settings.y, adaption_settings.z);
+
+				float l = adapted_luminance + (current_luminance - adapted_luminance) * (1-exp(-delta_time * adaption_settings.x));
+				//return float4(current_luminance, 1, 1, 1);				
+				return float4(reset_adaption == 1 ? current_luminance : l,1,1,1);				
+			}	
+		"""
+	}	
+	
+	vo_ssao = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			//depth = { sampler_states = "clamp_point" }
+			input_texture0 = { sampler_states = "clamp_point" }
+			vo_rotation = { sampler_states = "wrap_point" }
+		}
+		 
+		code="""
+			// Implementation of Toy Story 3s volumetric obscurance SSAO: http://advances.realtimerendering.com/s2010
+			
+			sampler2D input_texture0;
+			sampler2D vo_rotation;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 input_texture0_size;
+				float ssao_radius; // exports={ name="SSAO Spread" type="scalar" value=0.4 min=0.1 max=1 step=0.0001 }
+				float max_distance; // exports={ name="SSAO Depth Falloff" type="scalar" value=1.5 min=0.1 max=10 step=0.001 }
+			CBUFFER_END
+						
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;				
+				return o;
+			}
+						
+			float4 ps_main(PS_INPUT input
+				#ifdef GCM
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float2 wpos : VPOS
+				#endif
+				) : SV_TARGET0 
+			{
+				#if defined(GCM) || defined(X360)
+					float2 uv_rotation = wpos.xy * 0.25;
+				#elif defined(GL2)
+					float2 uv_rotation = (wpos.xy - float2(0.5, 0.5)) * 0.25;
+				#else
+					float2 uv_rotation = input.position.xy * 0.25;				
+				#endif
+				float2 rot_sin_cos = tex2D(vo_rotation, uv_rotation).rg;				
+				
+				float2x2 rotation = {
+					rot_sin_cos.y, -rot_sin_cos.x, 
+					rot_sin_cos.x, rot_sin_cos.y
+				};
+				
+				#define NUM_PAIRS 3
+				// 2 * weights in offset_radius_weight vector + 2 for center tap
+				static const float normalize_weights = 11.3852085; 
+				// radius: sqrt(x^2+y^2)
+				// weight calculated as 2*sqrt(1-(x^2+y^2))	
+				static const float4 offset_radius_weight[NUM_PAIRS] = {
+					float4(0.25, 0.25, 0.3535533, 1.87082869 / normalize_weights),
+					float4(0.0, 0.5, 0.5, 1.73205081 / normalize_weights),
+					float4(0.75, 0.375, 0.838525492, 1.08972474 / normalize_weights)
+				};				
+				static const float center_weight = 2.f / normalize_weights;
+				//float ssao_radius = 0.4;
+				
+				float inv_aspect_ratio = input_texture0_size.y / input_texture0_size.x;				
+				float d = gbuffer_decode_depth(tex2D(input_texture0, input.uv));
+								
+				float occlusion_amount = 0.5f * center_weight;
+				
+				//float max_distance = 1.5;
+				float radius = ssao_radius / d;
+				radius = min(radius, 0.07f);
+				
+				// to avoid false occlusion
+				static float depth_bias = 0.0025;
+				d -= depth_bias;
+				
+				for (int j=0; j < NUM_PAIRS; j++) {
+					float2 sample_point = offset_radius_weight[j].xy;
+					sample_point = mul(rotation, sample_point);
+					sample_point.x *= inv_aspect_ratio;
+					float3 sample_offset = float3(sample_point, offset_radius_weight[j].z);
+					sample_offset *= radius;
+					float sample_width = sample_offset.z;
+					
+					float2 uv_sample_0 = input.uv + sample_offset.xy;
+					float2 uv_sample_1 = input.uv - sample_offset.xy;
+					
+					float2 depth_samples = float2(
+						gbuffer_decode_depth(tex2D(input_texture0, uv_sample_0)),
+						gbuffer_decode_depth(tex2D(input_texture0, uv_sample_1)));
+						
+					float2 depth_diff = float2(d, d) - depth_samples;
+					float2 occlusion_contributions = saturate((depth_diff / float2(sample_width, sample_width)) + 0.5f);
+					
+					float2 distance_modifiers = saturate((float2(max_distance, max_distance) - depth_diff.xy) / max_distance);
+					float2 modified_contributions = lerp( 
+							lerp(float2(0.5, 0.5), float2(1, 1) - occlusion_contributions.yx, distance_modifiers.yx),
+							occlusion_contributions.xy, distance_modifiers.xy
+						);					
+					
+					modified_contributions *= offset_radius_weight[j].w;
+
+					occlusion_amount += modified_contributions.x;
+					occlusion_amount += modified_contributions.y;					
+				}
+				
+				occlusion_amount = saturate((occlusion_amount - 0.5f) * 2.f);
+								
+				// encode 16-bit [0-1] depth together with occlusion to be used in bilateral gaussian filter
+				d /= camera_near_far.y;
+				float2 rg_depth = encode_float_rg(d);
+				
+				//occlusion_amount = 0;
+				return float4(1 - occlusion_amount, rg_depth.r, rg_depth.g, 0);
+			}	
+		"""
+	}	
+	
+	bilateral_upscale = {
+		// currently not in use but tested and sample pattern + weights are correct - i keep it here for future reference.
+		// needs optimization!
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {			
+			input_texture0 = { sampler_states = "clamp_point" }
+			input_texture1 = { sampler_states = "clamp_point" }
+			depth = { sampler_states = "clamp_point" }
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+			sampler2D depth;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+				float2 inv_input_texture0_size;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				static const float4 bilinear_weights[4] = {
+					float4(9.0/16.0,3.0/16.0,3.0/16.0,1.0/16.0),
+					float4(3.0/16.0,9.0/16.0,1.0/16.0,3.0/16.0),
+					float4(3.0/16.0,1.0/16.0,9.0/16.0,3.0/16.0),
+					float4(1.0/16.0,3.0/16.0,3.0/16.0,9.0/16.0)
+				};
+				static const float eps = 0.001;				
+				
+				int2 pos = input.position.xy;
+				int idx = (pos.y%2)*2 + pos.x%2;				
+				
+				static const float2 offsets[4*4] = {
+					{ -0.5, -0.5 }, { 1.5, -0.5 }, {  1.5, 1.5 }, { -0.5, 1.5 }, 
+					{ -1.5, -0.5 }, { 0.5, -0.5 }, {  0.5, 1.5 }, { -1.5, 1.5 }, 
+					{ -0.5, -1.5 }, { 1.5, -1.5 }, { -0.5, 0.5 }, {  1.5, 0.5 }, 
+					{ -1.5, -1.5 }, { 0.5, -1.5 }, { -1.5, 0.5 }, {  0.5, 0.5 }
+				};
+				
+				inv_input_texture0_size *= 0.5;
+				float4 shading_coarse[4] = {
+					tex2D(input_texture0, input.uv + offsets[idx*4+0] * inv_input_texture0_size), 
+					tex2D(input_texture0, input.uv + offsets[idx*4+1] * inv_input_texture0_size), 
+					tex2D(input_texture0, input.uv + offsets[idx*4+2] * inv_input_texture0_size), 
+					tex2D(input_texture0, input.uv + offsets[idx*4+3] * inv_input_texture0_size)
+				};
+				
+				float depth_coarse[4] = {
+					tex2D(input_texture1, input.uv + offsets[idx*4+0] * inv_input_texture0_size).r, 
+					tex2D(input_texture1, input.uv + offsets[idx*4+1] * inv_input_texture0_size).r, 
+					tex2D(input_texture1, input.uv + offsets[idx*4+2] * inv_input_texture0_size).r, 
+					tex2D(input_texture1, input.uv + offsets[idx*4+3] * inv_input_texture0_size).r
+				};
+				
+				float depth_hires = tex2D(depth, input.uv).r;
+								
+				float total_weight = 0;
+				float4 s = 0;								
+				for (int i=0;i<4;i++) {
+					float diff = abs(depth_hires - depth_coarse[i]);										
+					float w = (1.0 / (eps+diff)) * bilinear_weights[idx][i];					
+					s += shading_coarse[i] * w;
+					total_weight += w;
+				}
+				
+				s /= total_weight;
+				
+				return float4(0,0,0,s.r*s.r);
+				//return s;
+			}	
+		"""
+	}
+	
+	ssao_upscale = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {			
+			input_texture0 = { sampler_states = "clamp_linear" }
+			defined_X360 = {
+				mask = { sampler_states = "clamp_point" }
+			}
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			#ifdef X360
+				sampler2D mask;				
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+				float2 inv_input_texture0_size;
+				float ssao_strength; // exports={ name="SSAO Strength" type="scalar" value=2 min=0.5 max=5 step=0.001 }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#ifdef X360				
+					float4 m = tex2D(mask, input.uv);
+					m.a = min(m.a, pow(tex2D(input_texture0, input.uv).r, ssao_strength));
+					return m;
+				#else
+					float c = tex2D(input_texture0, input.uv).r;
+					return float4(0,0,0,pow(c, ssao_strength));
+				#endif
+			}	
+		"""
+	}
+
+	ssao_blur = {
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 inv_input_texture0_size;
+			CBUFFER_END			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			void sample_tap(out float d, out float c, in float2 uv) {
+				float4 tap = tex2D(input_texture0, uv);
+				d = decode_float_rg(tap.gb);
+				c = tap.r;
+			}
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {								
+				static const float2 gaussian_taps[12] = {
+					float2(-6, 0.002216),
+					float2(-5, 0.008764),
+					float2(-4, 0.026995),
+					float2(-3, 0.064759),
+					float2(-2, 0.120985),
+					float2(-1, 0.176033),					
+					float2(1, 0.176033),
+					float2(2, 0.120985),
+					float2(3, 0.064759),
+					float2(4, 0.026995),
+					float2(5, 0.008764),
+					float2(6, 0.002216)
+				};
+				static const float center_weight = 0.199471;
+				static const float depth_eps = 0.00001;				
+				#if defined(SEPARABLE_GAUSSIAN_13TAP_X)
+					float2 d = float2(1, 0) * inv_input_texture0_size;
+				#else
+					float2 d = float2(0, 1) * inv_input_texture0_size;
+				#endif
+				
+				#define VECTORIZED
+				
+				#ifdef VECTORIZED
+					float inv_depth_falloff = 1.f / (0.25/camera_near_far.y);				
+					float4 cent = tex2D(input_texture0, input.uv);
+					float dc = decode_float_rg(cent.gb) - depth_eps;					
+					float total_weight = center_weight;
+				
+					float4 depths;
+					float4 colors;					
+					float4 total_w4 = 0;
+					float4 total_color = float4(cent.r * center_weight, 0, 0, 0);
+					for (int y = 0; y < 3; ++y) {
+						sample_tap(depths.x, colors.x, input.uv + d * gaussian_taps[y*4+0].x);
+						sample_tap(depths.y, colors.y, input.uv + d * gaussian_taps[y*4+1].x);
+						sample_tap(depths.z, colors.z, input.uv + d * gaussian_taps[y*4+2].x);
+						sample_tap(depths.w, colors.w, input.uv + d * gaussian_taps[y*4+3].x);
+						
+						depths = abs(dc.xxxx - depths);						
+						float4 w = (1-saturate(depths * inv_depth_falloff)) * float4(gaussian_taps[y*4+0].y, gaussian_taps[y*4+1].y, gaussian_taps[y*4+2].y, gaussian_taps[y*4+3].y);
+						colors *= w;
+						total_w4 += w;
+						total_color += colors;
+					}
+					total_weight += dot(total_w4, float4(1,1,1,1));
+					return float4(dot(total_color, float4(1,1,1,1))/total_weight, cent.gba);
+				#else				
+					float inv_depth_falloff = 1.f / (0.25/camera_near_far.y);				
+					float4 cent = tex2D(input_texture0, input.uv);
+					float dc = decode_float_rg(cent.gb) - depth_eps;
+					float c = cent.r * center_weight;
+					float total_weight = center_weight;
+					
+					#ifndef GCM
+						[unroll]
+					#endif
+					for (int i = 0; i < 12; ++i) {					
+						float2 ow = gaussian_taps[i];
+						float2 offs = d * ow.x;
+						float4 tap = tex2D(input_texture0, input.uv + offs);
+						float ds = decode_float_rg(tap.gb);
+						float diff = abs(dc - ds);
+						float w = (1-saturate(diff * inv_depth_falloff)) * ow.y;						
+						c += tap.r * w;
+						total_weight += w;							
+					}						
+					c /= total_weight;
+					
+					return float4(c,cent.gba);				
+				#endif
+			}	
+		"""
+	}
+
+	filter = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			defined_DEPTH_AWARE = {
+				input_texture1 = { sampler_states = "clamp_point" }
+			}
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+			#ifdef DEPTH_AWARE
+				sampler2D input_texture1;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 inv_input_texture0_size;
+			CBUFFER_END
+			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {				
+				#if defined(BOX) || defined(DOWNSAMPLE_4x4)
+					#if defined(BOX)
+						float d = 0.5;
+					#else
+						float d = 1.0;
+					#endif
+					
+					half4 c =
+						tex2D(input_texture0, input.uv + half2(-d, -d) * inv_input_texture0_size) +
+						tex2D(input_texture0, input.uv + half2( d, -d) * inv_input_texture0_size) + 
+						tex2D(input_texture0, input.uv + half2(-d,  d) * inv_input_texture0_size) + 
+						tex2D(input_texture0, input.uv + half2( d,  d) * inv_input_texture0_size);
+						
+					c *= 0.25;					
+				#elif defined(SEPARABLE_GAUSSIAN_13TAP_X) || defined(SEPARABLE_GAUSSIAN_13TAP_Y)
+					// rewrite this in less samples by respecting bilinear sampling (11 taps in 5 samples)
+					float2 gaussian_taps[13] = {
+						float2(-6, 0.002216),
+						float2(-5, 0.008764),
+						float2(-4, 0.026995),
+						float2(-3, 0.064759),
+						float2(-2, 0.120985),
+						float2(-1, 0.176033),
+						float2(0, 0.199471),
+						float2(1, 0.176033),
+						float2(2, 0.120985),
+						float2(3, 0.064759),
+						float2(4, 0.026995),
+						float2(5, 0.008764),
+						float2(6, 0.002216)
+					};
+					#if defined(SEPARABLE_GAUSSIAN_13TAP_X)
+						float2 d = float2(1, 0);
+					#else
+						float2 d = float2(0, 1);
+					#endif
+				
+					#ifdef DEPTH_AWARE
+						float4 c = float4(0,0,0,0);
+						const float eps = 0.00001;
+						float total_weight = 0.f;
+						float dc = tex2D(input_texture1, input.uv).r / camera_near_far.y;
+						
+						for (int i = 0; i < 13; ++i) {
+							float2 offs = d * gaussian_taps[i].x * inv_input_texture0_size;
+							float ds = tex2D(input_texture1, input.uv + offs).r / camera_near_far.y;
+							float diff = abs(dc - ds);							
+							//float w = (1.0 / (eps+diff)) * gaussian_taps[i].y;							
+							float w = (1-saturate(((eps+diff) / (0.1/camera_near_far.y))))   * gaussian_taps[i].y;							
+							
+							c += tex2D(input_texture0, input.uv + offs) * w;
+							total_weight += w;							
+						}						
+						c /= total_weight;
+					#else
+						float4 c = float4(0,0,0,0);			
+						for (int i = 0; i < 13; ++i)
+							c += tex2D(input_texture0, input.uv + d * gaussian_taps[i].x * inv_input_texture0_size) * gaussian_taps[i].y;
+					#endif
+				#elif defined(GAUSSIAN_BLUR_13TAP)
+					float3 gaussian_taps[13] = {
+						float3(0, 0, 0.39894),
+						
+						float3(-1.0, 1.0, 0.14676),
+						float3(1.0, 1.0, 0.14676),
+						float3(-1.0, -1.0, 0.14676),
+						float3(1.0, -1.0, 0.14676),
+						
+						float3(-1.0, 0, 0.24197),
+						float3(1.0, 0, 0.24197),
+						float3(0, -1.0, 0.24197),
+						float3(0, 1.0, 0.24197),
+						
+						float3(-2.0, 0, 0.05399),
+						float3(2.0, 0, 0.05399),
+						float3(0, -2.0, 0.05399),
+						float3(0, 2.0, 0.05399)
+					};
+					
+					half4 c = float4(0,0,0,0);
+					half total_weight = 0.f;
+					for (int i = 0; i < 13; ++i) {
+						half weight = gaussian_taps[i].z;
+						total_weight += weight;
+						c += tex2D(input_texture0, input.uv + gaussian_taps[i].xy * inv_input_texture0_size) * weight;
+					}
+					
+					c /= total_weight;
+				#elif defined(LOG_LUMINANCE)				
+					const half3 luminance_vector = half3(0.2127, 0.7152, 0.0721);
+					const half epsilon = 0.001f;
+					half4 c = tex2D(input_texture0, input.uv);
+					half l = dot(c.rgb, luminance_vector);
+					c.rgba = half4(log(max(l,epsilon)),0,0,0);
+				#else
+					half4 c = tex2D(input_texture0, input.uv);
+				#endif
+				
+				return c;
+			}	
+		"""
+	}
+	
+	blend = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }	
+			input_texture1 = { sampler_states = "clamp_linear" }	
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			half4 screen(half4 a, half4 b) {
+				return half4(1 - (1 - a) * (1 - b));				
+			}			
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				half4 t0 = tex2D(input_texture0, input.uv);
+				half4 t1 = tex2D(input_texture1, input.uv);
+				
+				#if defined(SCREEN)
+					half4 c = screen(t0, t1);
+				#else					
+					half4 c = t0 + t1;
+				#endif
+				return c;
+			}
+		"""
+	}	
+
+	downscale_depth	= {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 inv_input_texture0_size;
+			CBUFFER_END			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float d = 0.5;
+				
+				half4 c = float4(
+					tex2D(input_texture0, input.uv + half2(-d, -d) * inv_input_texture0_size).r,
+					tex2D(input_texture0, input.uv + half2( d, -d) * inv_input_texture0_size).r,
+					tex2D(input_texture0, input.uv + half2(-d,  d) * inv_input_texture0_size).r,
+					tex2D(input_texture0, input.uv + half2( d,  d) * inv_input_texture0_size).r);
+					
+				return float4(max(c.x, max(c.y, max(c.z, c.w))), 0, 0, 0);
+			}	
+		"""
+	}	
+
+	tone_mapping = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }	
+			defined_LUMINANCE_ADAPTION = {
+				adapted_luminance = { sampler_states = "clamp_linear" }
+			}
+			defined_COLOR_GRADING = {
+				shading_environment_color_grading = { sampler_states="clamp_linear" }
+			}
+		}
+		 
+		code="""
+			sampler2D input_texture0;			
+			#if defined(LUMINANCE_ADAPTION)
+				sampler2D adapted_luminance;
+			#endif
+			
+			#if defined(COLOR_GRADING)
+				sampler3D shading_environment_color_grading;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float exposure; // exports={ name="Scene Exposure" type="scalar" value=0.18 min=0.0 max=5.0 step=0.001 }				
+				float2 bright_pass_threshold_offset; // exports={ name="Bloom Threshold / Scale" type="vector2" value=[0.2 0.1] min=[0.2 0.1] max=[1 1] step=[0.001 0.001]}
+				float white_luminance; // exports={ name="White Luminance" type="scalar" value=1.2 min=0.0 max=5.0 step=0.001 }
+				#ifdef VIGNETTE
+					float3 scale_falloff_opacity; // exports={ name="Vignette Strength" type="vector3" value=[3 2.5 1.0] min=[0 0.1 0] max=[10 10 1] step=[0.001 0.001 0.001] }					
+				#endif
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float3 reinhard_tonemap_burn(float3 c, float avg_luminance, float middle_grey, float white_luminance) {
+				c *= (middle_grey / (avg_luminance + 0.001f));
+				return (c * (1.0 + (c / white_luminance))) / (1.0 + c);
+			}
+			
+			float3 brian_karis_tonemap(float exposure, float3 c) {
+				c *= exposure;
+				return 1-exp(-c);
+			}	
+			
+			half3 filmic_tonemap_helper(half3 x, half A, half B, half C, half D, half E, half F) {
+				return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F)) - E/F;				
+			}
+			
+			half3 filmic_tonemap(half3 c, half white_point, half shoulder_strength,half linear_strength, half linear_angle, half toe_strength, half toe_numerator, half toe_denominator) {
+				return filmic_tonemap_helper(c, shoulder_strength, linear_strength, linear_angle, toe_strength,  toe_numerator, toe_denominator) / 
+						filmic_tonemap_helper(white_point, shoulder_strength, linear_strength, linear_angle, toe_strength,  toe_numerator, toe_denominator);
+			}			
+
+			float3 gamma_correct(float3 c) {				
+				return pow(c, 1.f / 2.2f);
+			}
+			
+			struct PS_OUTPUT {
+				float4 result : SV_TARGET0;
+				float4 bright_pass : SV_TARGET1;
+			};
+			
+			float bloom_curve(float intensity) {
+				return pow(intensity, 2);
+			}
+			
+			// Spherical Gaussian Power Function 
+			float approx_pow(float x, float n) {
+				n = n * 1.4427f + 1.4427f; // 1.4427f --> 1/ln(2)
+				return exp2(x * n - n);
+			}
+			
+			#if defined(FILMIC)
+				static const half white_point = 11.2;
+				static const half shoulder_strength = 0.22;
+				static const half linear_strength = 0.3;
+				static const half linear_angle = 0.1;
+				static const half toe_strength = 0.2;
+				static const half toe_numerator = 0.01;
+				static const half toe_denominator = 0.3;
+				
+				#define LUT_TEXTURE_SIZE 16
+							
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {					
+					float4 c = tex2D(input_texture0, input.uv);
+					
+					#if defined(BRIGHT_PASS)
+						c.rgb /= c.a;
+					#endif
+					
+					#if defined(LUMINANCE_ADAPTION)
+						float avg_lum = tex2D(adapted_luminance, input.uv).r;					
+						c.rgb *= (exposure/avg_lum); 
+					#else
+						c.rgb *= exposure;
+					#endif
+					
+					#if defined(BRIGHT_PASS)
+						return float4(c.rgb * c.rgb, 1);
+					#endif
+				
+					float3 ct = filmic_tonemap(c.rgb, white_point, shoulder_strength, linear_strength, linear_angle, toe_strength, toe_numerator, toe_denominator);						
+					
+					#if defined(VIGNETTE)
+						half2 dist = (input.uv - 0.5f);
+						half vignette_mask = saturate(scale_falloff_opacity.x*approx_pow(1.f-dot(dist, dist), scale_falloff_opacity.y));				
+						ct = lerp(ct, ct * vignette_mask, scale_falloff_opacity.z);					
+					#endif					
+					
+					ct = gamma_correct(ct);					
+					
+					#if defined(COLOR_GRADING)
+						ct = saturate(ct);
+						ct = ct * ((LUT_TEXTURE_SIZE - 1.0)/LUT_TEXTURE_SIZE) + 0.5 / LUT_TEXTURE_SIZE;
+						ct = tex3Dlod(shading_environment_color_grading, float4(ct.rgb, 0));
+					#endif										
+					
+					return float4(ct, 1);
+				}			
+			#else			
+				#ifdef X360
+					float4 ps_main(PS_INPUT input) : SV_TARGET0 {					
+						float3 c = tex2D(input_texture0, input.uv).rgb;										
+						
+						#if defined(LUMINANCE_ADAPTION)
+							float avg_lum = tex2D(adapted_luminance, input.uv).r;					
+							c *= (exposure/avg_lum); 
+						#else
+							c *= exposure;
+						#endif
+
+						static const half white_point = 11.2;
+						static const half shoulder_strength = 0.22;
+						static const half linear_strength = 0.3;
+						static const half linear_angle = 0.1;
+						static const half toe_strength = 0.2;
+						static const half toe_numerator = 0.01;
+						static const half toe_denominator = 0.3;									
+						
+						float3 ct = filmic_tonemap(c, white_point, shoulder_strength, linear_strength, linear_angle, toe_strength, toe_numerator, toe_denominator);												
+						return float4(gamma_correct(ct), 1);					
+					}	
+				
+				#else			
+					static const half white_point = 11.2;
+					static const half shoulder_strength = 0.22;
+					static const half linear_strength = 0.3;
+					static const half linear_angle = 0.1;
+					static const half toe_strength = 0.2;
+					static const half toe_numerator = 0.01;
+					static const half toe_denominator = 0.3;
+									
+					//float3 ct = filmic_tonemap(c*exposure, white_point, shoulder_strength, linear_strength, linear_angle, toe_strength, toe_numerator, toe_denominator);				
+					//static const half3 luminance_vector = half3(0.27, 0.67, 0.06);				
+					static const half3 luminance_vector = half3(0.2127, 0.7152, 0.0721);
+				
+					PS_OUTPUT ps_main(PS_INPUT input) {
+						PS_OUTPUT o;				
+						
+						float3 c = tex2D(input_texture0, input.uv).rgb;				
+						
+						#if defined(LUMINANCE_ADAPTION)
+							float avg_lum = tex2D(adapted_luminance, input.uv).r;					
+							c *= (exposure/avg_lum); 
+						#else
+							c *= exposure;
+						#endif
+
+						//float middle_grey = 0.18;
+						//float white_luminance = 1.2;
+						
+						float3 ct = filmic_tonemap(c, white_point, shoulder_strength, linear_strength, linear_angle, toe_strength, toe_numerator, toe_denominator);												
+						o.result = float4(gamma_correct(ct), 1);				
+						
+						float bright_pass_threshold = bright_pass_threshold_offset.x;
+						float bright_pass_offset = bright_pass_threshold_offset.y;
+						
+						half lum_scale = max(dot(ct, luminance_vector) - bright_pass_threshold, 0);
+						lum_scale /= (bright_pass_offset + lum_scale);
+						o.bright_pass = float4(gamma_correct(ct * lum_scale), 0);
+						
+						return o;				
+					}	
+				#endif
+			#endif
+		"""
+	}
+	
+	depth_fog = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			depth = { sampler_states = "clamp_point" }	
+		}
+		 
+		code="""
+			sampler2D depth;
+			//samplerCUBE input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float3 linear_fog_color : TEXCOORD1;
+				float4 w : TEXCOORD3;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 depth_range; // exports={ name="Depth Range (min/max)" type="vector2" value=[5 150] min=[0 0] max=[1000 1000] step=[1 1] }
+				float3 fog_color; // exports={ name="Fog Color" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[5 5 5] step=[0.003 0.003 0.003] }
+				float3 sun_direction;
+				float3 sun_color;
+				float3 sun_blend; // exports={ name="Fog Sun Blend / Exponent / Strength" type="vector3" value=[1.0 8.0 1.0] min=[0 1 0] max = [1 16 1] step = [0.001 0.01 0.001] }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				p.z = 1;
+				o.position = p;
+				o.uv = input.uv;
+				o.linear_fog_color = pow(fog_color, 2.2);				
+				o.w = encode_world_pos(o.position, camera_unprojection);
+				
+				return o;
+			}			
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));				
+				float start = depth_range.x;
+				float end = depth_range.y;
+				
+				//float a = d > start ? saturate((d-start) / (end-start)) : 0;
+
+				float3 wp = decode_world_pos(input.w, d);
+				float3 view_dir = normalize(camera_world._m30_m31_m32 - wp);
+				
+				float b = 1.f / (end-start);
+				float dist = d - start;
+				//float a = 1-saturate(exp(-dist * b)); 
+				float a = saturate(exp(-camera_world._m32 * b) * (1-exp(-dist * -view_dir.z * b)) / -view_dir.z);
+					
+				half sa = sun_blend.x * pow(saturate(dot(view_dir, sun_direction)), sun_blend.y);
+				half3 c = lerp(fog_color, sun_blend.z * sun_color, sa);
+				
+				return half4(c, d > start ? a : 0);
+				
+			}	
+		"""
+	}
+
+	dof_initial_downsample = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			depth = { sampler_states = "clamp_point" }	
+		}
+		 
+		code="""
+			#if defined(GCM)
+				#pragma regcount 35			
+			#endif
+			sampler2D depth;
+			sampler2D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv0 : TEXCOORD0;
+				float2 uv1 : TEXCOORD1;
+				float2 uv2 : TEXCOORD2;
+				float2 uv3 : TEXCOORD3;
+				float2 uv4 : TEXCOORD4;
+				float2 uv5 : TEXCOORD5;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				
+				float2 near; // exports={ name="Near Focus (distance/fade)" type="vector2" value=[1 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float2 far;  // exports={ name="Far Focus (distance/fade)" type="vector2" value=[10 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float2 inv_input_texture0_size;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;
+				
+				o.uv0 = input.uv + float2(-1, -1) * inv_input_texture0_size;
+				o.uv1 = input.uv + float2( 1, -1) * inv_input_texture0_size;
+				
+				o.uv2 = input.uv + float2( -1.5, -1.5) * inv_input_texture0_size;
+				o.uv3 = input.uv + float2( -0.5, -1.5) * inv_input_texture0_size;
+				o.uv4 = input.uv + float2( +0.5, -1.5) * inv_input_texture0_size;
+				o.uv5 = input.uv + float2( +1.5, -1.5) * inv_input_texture0_size;					
+				
+				return o;
+			}
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float2 dof_near_eq = float2(-1.f / near.y, near.x / near.y);  
+				//float3 dof_far_eq = float3(1.f / far.y, -far.x / far.y, 0.5);
+				
+				float2 dof_row_delta = float2(0.f, inv_input_texture0_size.y * 0.25);
+				
+				float2 row_ofs[4];
+				row_ofs[0] = float2(0,0);
+				row_ofs[1] = dof_row_delta;
+				row_ofs[2] = dof_row_delta * 2;
+				row_ofs[3] = dof_row_delta * 3;
+				
+				half3 color = (tex2D(input_texture0, input.uv0 - row_ofs[0]).rgb +
+								tex2D(input_texture0, input.uv1 - row_ofs[0]).rgb + 
+								tex2D(input_texture0, input.uv0 + row_ofs[2]).rgb +
+								tex2D(input_texture0, input.uv1 + row_ofs[2]).rgb);
+				color *= 0.25;				
+				
+				half4 scene_near_coc, near_coc;
+				half4 scene_far_coc, far_coc;
+				
+				float4 d;
+				d[0] = gbuffer_decode_depth(tex2D(depth, input.uv2 + row_ofs[0]));
+				d[1] = gbuffer_decode_depth(tex2D(depth, input.uv3 + row_ofs[0]));
+				d[2] = gbuffer_decode_depth(tex2D(depth, input.uv4 + row_ofs[0]));
+				d[3] = gbuffer_decode_depth(tex2D(depth, input.uv5 + row_ofs[0]));
+				scene_near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				//scene_far_coc = saturate((dof_far_eq.x * d + dof_far_eq.y)* dof_far_eq.z);				
+				
+				d[0] = gbuffer_decode_depth(tex2D(depth, input.uv2 + row_ofs[1]));
+				d[1] = gbuffer_decode_depth(tex2D(depth, input.uv3 + row_ofs[1]));
+				d[2] = gbuffer_decode_depth(tex2D(depth, input.uv4 + row_ofs[1]));
+				d[3] = gbuffer_decode_depth(tex2D(depth, input.uv5 + row_ofs[1]));
+				near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				//far_coc = saturate((dof_far_eq.x * d + dof_far_eq.y)* dof_far_eq.z);				
+				
+				scene_near_coc = max( near_coc, scene_near_coc );
+				//scene_far_coc = max( far_coc, scene_far_coc );
+				
+				d[0] = gbuffer_decode_depth(tex2D(depth, input.uv2 + row_ofs[2]));
+				d[1] = gbuffer_decode_depth(tex2D(depth, input.uv3 + row_ofs[2]));
+				d[2] = gbuffer_decode_depth(tex2D(depth, input.uv4 + row_ofs[2]));
+				d[3] = gbuffer_decode_depth(tex2D(depth, input.uv5 + row_ofs[2]));
+				near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				//far_coc = saturate((dof_far_eq.x * d + dof_far_eq.y)* dof_far_eq.z);				
+				
+				scene_near_coc = max( near_coc, scene_near_coc );
+				//scene_far_coc = max( far_coc, scene_far_coc );
+				
+				d[0] = gbuffer_decode_depth(tex2D(depth, input.uv2 + row_ofs[3]));
+				d[1] = gbuffer_decode_depth(tex2D(depth, input.uv3 + row_ofs[3]));
+				d[2] = gbuffer_decode_depth(tex2D(depth, input.uv4 + row_ofs[3]));
+				d[3] = gbuffer_decode_depth(tex2D(depth, input.uv5 + row_ofs[3]));				
+				near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				//far_coc = saturate((dof_far_eq.x * d + dof_far_eq.y)* dof_far_eq.z);				
+				
+				scene_near_coc = max( near_coc, scene_near_coc );
+				//scene_far_coc = max( far_coc, scene_far_coc );
+				
+				half max_near_coc = saturate(max( max(scene_near_coc[0], scene_near_coc[1]), max(scene_near_coc[2], scene_near_coc[3]) ));	
+				half max_far_coc = saturate(max( max(scene_far_coc[0], scene_far_coc[1]), max(scene_far_coc[2], scene_far_coc[3])));	
+				
+				return float4(color /** max(max_far_coc, max_near_coc)*/, max_near_coc);
+			}	
+		"""
+	}
+	
+	dof_near_coc = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			input_texture1 = { sampler_states = "clamp_linear" }
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;			
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				half4 shrunk = tex2D(input_texture0, input.uv);
+				half4 blurred = tex2D(input_texture1, input.uv);
+				half3 color = shrunk.rgb;
+				half coc = 2 * max(blurred.a, shrunk.a) - shrunk.a;
+				return float4(color, coc);
+			}	
+		"""
+	}	
+
+	dof_apply = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }			
+			input_texture1 = { sampler_states = "clamp_linear" }
+			input_texture2 = { sampler_states = "clamp_linear" }
+			depth = { sampler_states = "clamp_point" }
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+			sampler2D input_texture2;
+			sampler2D depth;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 near; // exports={ name="Near Focus (distance/fade)" type="vector2" value=[1 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float2 far;  // exports={ name="Far Focus (distance/fade)" type="vector2" value=[10 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float amount; // exports={ name="Dof Amount" type="scalar" value=1.0 min=0.0 max=1.0 step=0.001 }
+				float2 inv_input_texture0_size;
+				float2 inv_input_texture1_size;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				p.z = 1;
+				o.position = p;
+				o.uv = input.uv;				
+				return o;
+			}			
+			
+			half3 get_small_blur_sample( float2 tc ) {
+				const half weight = 4.0 / 17;
+				
+				half3 sum = 0;
+				sum += weight * tex2D(input_texture0, tc + float2(+0.5, -1.5) * inv_input_texture0_size).rgb;
+				sum += weight * tex2D(input_texture0, tc + float2(-1.5, -0.5) * inv_input_texture0_size).rgb;
+				sum += weight * tex2D(input_texture0, tc + float2(-0.5, +1.5) * inv_input_texture0_size).rgb;
+				sum += weight * tex2D(input_texture0, tc + float2(+1.5, +0.5) * inv_input_texture0_size).rgb;
+				return sum;		
+			}
+			
+			half4 interpolate_dof( half3 small, half3 med, half3 large, half t ) {									
+				half d0 = 0.05;
+				half d1 = 0.65;
+				half d2 = 0.3;
+				
+				half4 dof_lerp_scale = float4( -1 / d0, -1 / d1, -1 / d2, 1 / d2);
+				half4 dof_lerp_bias = float4(1, (1 - d2) / d1, 1 / d2, (d2 - 1) / d2);
+
+				half4 weights = saturate( t * dof_lerp_scale + dof_lerp_bias );
+				weights.yz = min(weights.yz, 1 - weights.xy);
+				
+				half3 color = weights.y * small + weights.z * med + weights.w * large;					
+				half alpha = dot( weights.yzw, half3( 16.0 / 17, 1.0, 1.0) );					
+				return half4(color, alpha);				
+			}
+						
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {				
+				float3 dof_far_eq = float3(1.f / far.y, -far.x / far.y, 0.5);
+				
+				half3 small = get_small_blur_sample(input.uv);
+				half4 med = tex2D(input_texture1, input.uv);
+				half4 large = tex2D(input_texture2, input.uv);								
+				
+				half near_coc = med.a;					
+				half coc;
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));
+				if (d >= camera_near_far.y) {
+					coc = near_coc;
+				} else {
+					half far_coc = saturate(dof_far_eq.x * d + dof_far_eq.y) * dof_far_eq.z;
+					coc = max(near_coc, far_coc);
+				}				
+				coc = clamp(coc, 0, amount);
+				
+				//return float4(lerp(tex2D(input_texture0, input.uv).rgb, med.rgb, coc), 1);
+				//return float4(coc, coc, coc, 0);
+				
+				half4 o = interpolate_dof(small, med, large, coc);				
+				return float4(o.rgb + tex2D(input_texture0, input.uv).rgb * (1 - o.a), 1);						
+			}	
+		"""
+	}	
+	  
+	
+	dof = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			defined_APPLY = {
+				input_texture1 = { sampler_states = "clamp_point" }
+			}
+			defined_DOWNSCALE_COC = {
+				depth = { sampler_states = "clamp_point" }	
+			}
+		}
+		 
+		code="""
+			#if defined(GCM)
+				#pragma regcount 35
+			#endif
+			#ifdef DOWNSCALE_COC
+				sampler2D depth;
+			#endif			
+			sampler2D input_texture0;
+			#ifdef APPLY
+				sampler2D input_texture1;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv0 : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				
+				float skydome_blur; // exports={ name="DoF Skydome Blur Factor" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }
+				float amount; // exports={ name="DoF Amount" type="scalar" value=1.0 min=0.0 max=1.0 step=0.001 }
+				float2 near; // exports={ name="Near Focus (distance/fade)" type="vector2" value=[1 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float2 far;  // exports={ name="Far Focus (distance/fade)" type="vector2" value=[10 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float2 inv_input_texture0_size;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;
+				
+				o.uv0 = input.uv;
+				
+				return o;
+			}
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#if defined(DOWNSCALE_COC)
+					float2 dof_near_eq = float2(-1.f / near.y, near.x / near.y);
+					float3 dof_far_eq = float3(1.f / far.y, -far.x / far.y, 0.5);
+					
+					half3 color = tex2D(input_texture0, input.uv0).rgb;					
+					
+					float4 d;
+					d[0] = gbuffer_decode_depth(tex2D(depth, input.uv0 + float2(-inv_input_texture0_size.x, -inv_input_texture0_size.y)));
+					d[1] = gbuffer_decode_depth(tex2D(depth, input.uv0 + float2(inv_input_texture0_size.x, -inv_input_texture0_size.y)));
+					d[2] = gbuffer_decode_depth(tex2D(depth, input.uv0 + float2(-inv_input_texture0_size.x, inv_input_texture0_size.y)));
+					d[3] = gbuffer_decode_depth(tex2D(depth, input.uv0 + float2(inv_input_texture0_size.x, inv_input_texture0_size.y)));
+					half4 scene_near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+					half4 scene_far_coc = saturate((dof_far_eq.x * d + dof_far_eq.y)* dof_far_eq.z);	
+					
+					scene_far_coc *= (d < camera_near_far.yyyy) ? half4(1,1,1,1) : half4(skydome_blur,skydome_blur,skydome_blur,skydome_blur);
+
+					
+					half max_near_coc = saturate(max( max(scene_near_coc[0], scene_near_coc[1]), max(scene_near_coc[2], scene_near_coc[3]) ));						
+					half min_far_coc = saturate(min( min(scene_far_coc[0], scene_far_coc[1]), min(scene_far_coc[2], scene_far_coc[3])));
+					half coc = max(max_near_coc, min_far_coc);					
+					
+					coc = clamp(coc, 0.0, amount) + 0.01;
+					return float4(color * coc, coc);				
+				#elif defined(SEPARABLE_GAUSSIAN_13TAP_X) || defined(SEPARABLE_GAUSSIAN_13TAP_Y)					
+					float2 gaussian_taps[12] = {
+						float2(-6, 0.002216),
+						float2(-5, 0.008764),
+						float2(-4, 0.026995),
+						float2(-3, 0.064759),
+						float2(-2, 0.120985),
+						float2(-1, 0.176033),						
+						float2(1, 0.176033),
+						float2(2, 0.120985),
+						float2(3, 0.064759),
+						float2(4, 0.026995),
+						float2(5, 0.008764),
+						float2(6, 0.002216)
+					};
+					
+					float center_weight = 0.199471;					
+					float4 c = tex2D(input_texture0, input.uv0);
+					float coc = c.a;
+					c *= center_weight;
+					
+					#if defined(SEPARABLE_GAUSSIAN_13TAP_X)
+						float2 d = float2(coc, 0) * inv_input_texture0_size;
+					#else
+						float2 d = float2(0, coc) * inv_input_texture0_size;
+					#endif				
+					
+					for (int i = 0; i < 12; ++i)
+						c += tex2D(input_texture0, input.uv0 + d * gaussian_taps[i].x) * gaussian_taps[i].y;					
+					return c;
+				#elif defined(APPLY)
+					float4 c = tex2D(input_texture1, input.uv0);
+					float4 dof = tex2D(input_texture0, input.uv0);
+					return float4(lerp(c.rgb, dof.rgb / dof.a, dof.a), 1);					
+				#endif
+			}	
+		"""
+	}
+
+	nv_dof_compute_radius = {
+		includes = [ "common", "gbuffer_access" ]
+		 
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }	
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+			//Texture2D<float> depth;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;				
+				
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;	
+				float2 uv0 : TEXCOORD0;
+				float2 uv1 : TEXCOORD1;
+				float2 uv2 : TEXCOORD2;
+				float2 uv3 : TEXCOORD3;
+				float2 uv4 : TEXCOORD4;
+				float2 uv5 : TEXCOORD5;				
+			};			 			
+			
+			cbuffer c0 {
+				float4x4 world_view_proj;
+				float aperture; 	// exports={ name="Aperture" type="scalar" value=300 min=1 max=500 step=1 }
+				float focal_length; // exports={ name="Focal Length" type="scalar" value=0.03 min=0.01 max=0.1 step=0.001 }
+				float plane_in_focus; // exports={ name="Focus Plane" type="scalar" value=1.5 min=0.1 max=10 step=0.01 }
+				
+				float2 near; // exports={ name="Near Focus (distance/fade)" type="vector2" value=[1 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float near_max_coc; // exports={ name="Near Max CoC Radius" type="scalar" value=10 min=1 max=20 step=1 }
+				float2 inv_input_texture0_size;				
+			};			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;				
+				
+				o.uv0 = input.uv + float2(-1, -1) * inv_input_texture0_size;
+				o.uv1 = input.uv + float2(1, -1) * inv_input_texture0_size;
+				
+				o.uv2 = input.uv + float2( -1.5, -1.5) * inv_input_texture0_size;
+				o.uv3 = input.uv + float2( -0.5, -1.5) * inv_input_texture0_size;
+				o.uv4 = input.uv + float2( +0.5, -1.5) * inv_input_texture0_size;
+				o.uv5 = input.uv + float2( +1.5, -1.5) * inv_input_texture0_size;		
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {					
+				float2 dof_near_eq = float2(-1.f / near.y, near.x / near.y);  
+				
+				float2 dof_row_delta = float2( 0.f, inv_input_texture0_size.y );
+				
+				float2 row_ofs[4];
+				row_ofs[0] = float2(0,0);
+				row_ofs[1] = dof_row_delta;
+				row_ofs[2] = dof_row_delta * 2;
+				row_ofs[3] = dof_row_delta * 3;				
+				
+				half4 scene_coc, coc;
+				float4 d;
+				d[0] = gbuffer_decode_depth(tex2D(input_texture0, input.uv2 + row_ofs[0]));
+				d[1] = gbuffer_decode_depth(tex2D(input_texture0, input.uv3 + row_ofs[0]));
+				d[2] = gbuffer_decode_depth(tex2D(input_texture0, input.uv4 + row_ofs[0]));
+				d[3] = gbuffer_decode_depth(tex2D(input_texture0, input.uv5 + row_ofs[0]));
+				scene_coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				
+				d[0] = gbuffer_decode_depth(tex2D(input_texture0, input.uv2 + row_ofs[1]));
+				d[1] = gbuffer_decode_depth(tex2D(input_texture0, input.uv3 + row_ofs[1]));
+				d[2] = gbuffer_decode_depth(tex2D(input_texture0, input.uv4 + row_ofs[1]));
+				d[3] = gbuffer_decode_depth(tex2D(input_texture0, input.uv5 + row_ofs[1]));
+				coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				scene_coc = max( coc, scene_coc );
+				
+				d[0] = gbuffer_decode_depth(tex2D(input_texture0, input.uv2 + row_ofs[2]));
+				d[1] = gbuffer_decode_depth(tex2D(input_texture0, input.uv3 + row_ofs[2]));
+				d[2] = gbuffer_decode_depth(tex2D(input_texture0, input.uv4 + row_ofs[2]));
+				d[3] = gbuffer_decode_depth(tex2D(input_texture0, input.uv5 + row_ofs[2]));
+				coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				scene_coc = max( coc, scene_coc );
+				
+				d[0] = gbuffer_decode_depth(tex2D(input_texture0, input.uv2 + row_ofs[3]));
+				d[1] = gbuffer_decode_depth(tex2D(input_texture0, input.uv3 + row_ofs[3]));
+				d[2] = gbuffer_decode_depth(tex2D(input_texture0, input.uv4 + row_ofs[3]));
+				d[3] = gbuffer_decode_depth(tex2D(input_texture0, input.uv5 + row_ofs[3]));				
+				coc = saturate(dof_near_eq.x * d + dof_near_eq.y);
+				scene_coc = max( coc, scene_coc );	
+				
+				half max_coc = max( max(scene_coc[0], scene_coc[1]), max(scene_coc[2], scene_coc[3]) );		
+				max_coc *= near_max_coc;
+				
+				return float4(max_coc,max_coc,max_coc,max_coc);
+				//float d = depth.Load(int3(input.position.xy, 0));
+				//float r = abs(aperture * (focal_length * (d - plane_in_focus)) / (d * (plane_in_focus - focal_length)));
+				//return float4(r,r,r,r);
+			}	
+		"""
+	}
+	
+	nv_dof_compute_radius_far = {
+		includes = [ "common", "gbuffer_access" ]
+		 
+		samplers = {
+			depth = { sampler_states = "clamp_point" }	
+			input_texture0 = { sampler_states = "clamp_linear" }	
+		}
+		 
+		code="""
+			sampler2D depth;
+			sampler2D input_texture0;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;				
+				
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;	
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			cbuffer c0 {
+				float4x4 world_view_proj;				
+				float2 far;  // exports={ name="Far Focus (distance/fade)" type="vector2" value=[10 1] min=[0 0] max=[200 10] step=[0.1 0.1] }
+				float fax_max_coc; // exports={ name="Far Max CoC Radius" type="scalar" value=10 min=1 max=20 step=1 }
+				float amount; // exports={ name="Dof Amount" type="scalar" value=1.0 min=0.0 max=1.0 step=0.001 }
+			};			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				p.z = 1;
+				o.position = p;				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {	
+				float2 dof_far_eq = float2(1.f / far.y, -far.x / far.y);  
+				//float2 near = float2(0.4, 0.4);
+				//float near_max_coc = 20;				
+				//float2 dof_near_eq = float2(-1.f / near.y, near.x / near.y);  
+				//half near_coc = saturate(dof_near_eq.x * d + dof_near_eq.y) * near_max_coc;
+				
+				half near_coc = tex2D(input_texture0, input.uv).r;
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));				
+				half coc;
+				if( d == 0.0 ) {
+					coc = fax_max_coc;	
+				} else {
+					half far_coc = saturate(dof_far_eq.x * d + dof_far_eq.y);	
+					coc = max(near_coc, far_coc * fax_max_coc) * amount;
+				}				
+				
+				// return float4(10,0,0,0);
+				return float4(coc, coc, coc, coc);				
+			}	
+		"""
+	}	
+
+	nv_dof_tridiagonal_fill = {
+		includes = [ "common", "gbuffer_access" ]
+		 
+		code="""			
+			Texture2D<float4> input_texture0;
+			Texture2D<float> input_texture1;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;				
+				float2 uv : TEXCOORD0;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;				
+			};			 			
+			
+			cbuffer c0 {
+				float4x4 world_view_proj;
+			};			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;				
+				o.uv = input.uv;
+				
+				return o;
+			}
+			
+			struct PS_OUTPUT {
+				float4 mat : SV_Target0;
+				float4 d : SV_Target1;
+			};
+			
+			PS_OUTPUT ps_main(PS_INPUT input) {	
+				PS_OUTPUT tri;
+				
+				float width, height;
+				input_texture0.GetDimensions(width, height);
+				
+				int2 pos = input.position;
+				int2 prevpos;
+				#ifdef DIRECTION_X
+					prevpos = int2(pos.x - 1, pos.y); 
+				#else
+					prevpos = int2(pos.x, pos.y - 1); 
+				#endif
+				
+				// load color & depth
+				float dof_res_scale = 1;
+				float d_prev = input_texture1.Load(int3(prevpos.x * dof_res_scale, prevpos.y * dof_res_scale, 0));
+				float d_cur = input_texture1.Load(int3(pos.x * dof_res_scale, pos.y * dof_res_scale, 0));
+				float3 c_cur = input_texture0.Load(int3(pos.x, pos.y, 0)).rgb;
+				float gamma = 1.0f;
+				
+				tri.mat = float4( - d_prev * d_prev, gamma + d_prev * d_prev + d_cur * d_cur, - d_cur * d_cur, 0.0f );
+				tri.d = float4( c_cur, gamma );
+				
+				#ifdef DIRECTION_X
+					if (pos.x == 0)
+					{
+						tri.mat = float4( 0.0f, 1.0f, -1.0f, 0.0f );
+						tri.d.rgb = float3( 0.0f, 0.0f, 0.0f );
+					}
+					if (pos.x == width-1) 
+					{
+						tri.mat = float4( -1.0f, 1.0f, 0.0f, 0.0f );
+						tri.d.rgb = float3( 0.0f, 0.0f, 0.0f );
+					}
+				#else
+					if (pos.y == 0)
+					{
+						tri.mat = float4( 0.0f, 1.0f, -1.0f, 0.0f );
+						tri.d.rgb = float3( 0.0f, 0.0f, 0.0f );
+					}
+					if (pos.y == height-1) 
+					{
+						tri.mat = float4( -1.0f, 1.0f, 0.0f, 0.0f );
+						tri.d.rgb = float3( 0.0f, 0.0f, 0.0f );
+					}
+				#endif
+				
+				return tri;				
+			}	
+		"""
+	}
+
+	nv_dof_pcr_step = {
+		includes = [ "common", "gbuffer_access" ]
+		 
+		code="""
+			Texture2D<float4> input_texture0;
+			Texture2D<float4> input_texture1;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;				
+				float2 uv : TEXCOORD0;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			cbuffer c0 {
+				float4x4 world_view_proj;				
+			};			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				o.position = p;				
+				o.uv = input.uv;
+				
+				return o;
+			}
+			
+			struct PS_OUTPUT {
+				float4 mat : SV_Target0;
+				float4 d : SV_Target1;
+			};
+			
+			PS_OUTPUT ps_main(PS_INPUT input) {	
+				PS_OUTPUT mod;
+
+				float width, height;
+				input_texture0.GetDimensions(width, height);				
+				uint2 pos = floor(input.uv * uint2(width, height));
+				
+				#if defined(ITER1)
+					int delta = 1;
+				#elif defined(ITER2)
+					int delta = 2;
+				#elif defined(ITER3)
+					int delta = 4;
+				#endif				
+				
+				int system_size;
+				uint2 add;
+				
+				int i;
+				#ifdef DIRECTION_X
+					i = pos.x; 
+					add.x = delta; 
+					add.y = 0; 
+					system_size = width; 
+				#else
+					i = pos.y; 
+					add.x = 0; 
+					add.y = delta; 
+					system_size = height; 
+				#endif
+					
+				float4 mat_i = input_texture0.Load(int3(pos, 0));
+				float4 d_i = input_texture1.Load(int3(pos, 0));
+				
+				pos += add;
+				float4 mat_i_1 = input_texture0.Load(int3(pos, 0));
+				float4 d_i_1 = input_texture1.Load(int3(pos, 0));
+
+				pos -= 2 * add;
+				float4 mat_i_2 = input_texture0.Load(int3(pos, 0));
+				float4 d_i_2 = input_texture1.Load(int3(pos, 0));
+				
+				float4 matNew, dNew;
+					
+				{
+					// ABC -> RGB
+					if(i < delta)
+					{
+						float tmp2 = mat_i.b / mat_i_1.g;
+						
+						matNew.r = 0;
+						matNew.g = mat_i.g - mat_i_1.r * tmp2;
+						matNew.b = -mat_i_1.b * tmp2;	
+						
+						dNew = d_i - d_i_1 * tmp2;
+					}
+					else if((system_size-i-1) < delta)
+					{
+						float tmp1 = mat_i.r / mat_i_2.g;
+						
+						matNew.r = -mat_i_2.r * tmp1;
+						matNew.g = mat_i.g - mat_i_2.b * tmp1;
+						matNew.b = 0;			
+						
+						dNew = d_i - d_i_2 * tmp1;						
+					}
+					else		    
+					{
+						float tmp1 = mat_i.r / mat_i_2.g;
+						float tmp2 = mat_i.b / mat_i_1.g;
+						
+						matNew.r = -mat_i_2.r * tmp1;
+						matNew.g = mat_i.g - mat_i_2.b * tmp1 - mat_i_1.r * tmp2;
+						matNew.b = -mat_i_1.b * tmp2;
+						
+						dNew = d_i - d_i_2 * tmp1 - d_i_1 * tmp2;						
+					}	
+				}
+				
+				mod.mat = matNew;
+				mod.d = dNew;
+
+				return mod;
+			}	
+		"""
+	}	
+	nv_dof_sweep_pcr_vector = {
+		includes = [ "common", "gbuffer_access" ]
+		 
+		code="""
+			Texture2D<float4> input_texture0;
+			Texture2D<float4> input_texture1;
+			RWStructuredBuffer<float> input_texture2;			
+			
+			cbuffer c0 {				
+				float2 input_texture2_size;
+			};
+			
+			#define MAX_RESOLUTION_X 2560
+			#define MAX_RESOLUTION_Y 1600
+			
+			#if defined(DIRECTION_X)
+				#define ITERATIONS 3
+				#define BLOCK_SIZE_X 8
+				#define BLOCK_SIZE_Y 16
+				#define MAX_SIZE (MAX_RESOLUTION_X >> ITERATIONS)
+			#else
+				#define ITERATIONS 1
+				#define BLOCK_SIZE_X 64
+				#define BLOCK_SIZE_Y 2			
+				#define MAX_SIZE (MAX_RESOLUTION_Y >> ITERATIONS)
+			#endif		
+			
+			#define BACKWARD_TRACE_IN_SMEM
+			#if defined(BACKWARD_TRACE_IN_SMEM)
+				#define warp 32
+				#define smem_size (BLOCK_SIZE_Y * warp)
+				#define flush_count (warp / BLOCK_SIZE_X)
+				groupshared float smem[smem_size * 3];			
+			#endif
+			
+			[numthreads(BLOCK_SIZE_X,BLOCK_SIZE_Y,1)]
+			void cs_main(uint3 globalThreadID : SV_DispatchThreadID, uint3 localThreadID : SV_GroupThreadID, uint3 groupID : SV_GroupID)
+			{				
+				const int num_sys = 1 << ITERATIONS;	// number of decomposed systems 
+				
+				float width, height;
+				input_texture0.GetDimensions(width, height);
+				
+				float width_aligned = input_texture2_size.x;
+				float height_aligned = input_texture2_size.y / 4;
+				
+				int posx = globalThreadID.x;
+				int posy = globalThreadID.y;
+				
+				#ifndef BACKWARD_TRACE_IN_SMEM
+					if (posx >= width || posy >= height) return;
+				#endif				
+				
+				//int base_idx = posx + posy * width;	
+				int base_idx = posx + posy * width_aligned;
+				
+				#ifdef DIRECTION_X
+					int n = width - 1;
+					int stride = 8;
+				#else
+					int n = height - 1;
+					//int stride = 2 * width;
+					int stride = 2 * width_aligned;					
+				#endif
+				
+				n >>= ITERATIONS;								
+				
+				// temporary array
+				float a[MAX_SIZE+1];
+				
+				float4 mat, rhs;
+				float4 x_prev, x_next;
+				float t; 
+
+				// solving next system:	
+				// mat.r * u_i-1 + mat.g * u_i + mat.b * u_i+1  = x_i
+
+				//int global_stride = width * height;
+				int global_stride = width_aligned * height_aligned;
+
+				// forward trace
+				int idx_c = base_idx;
+				a[0] = 0;
+				x_prev = 0;
+				
+				for (int i = 0; i <= n; i++) {			
+					if (posx >= width_aligned || posy >= height) break;
+					if (posx >= width) posx = width - 1;
+					
+					mat = input_texture0.Load(int3(posx, posy, 0));
+					rhs = input_texture1.Load(int3(posx, posy, 0));
+
+					t = 1 / (mat.r * a[i] + mat.g);
+					a[i+1] = - mat.b * t;
+					
+					x_next = (rhs - x_prev * mat.r) * t; 					
+					
+					if (posx < width && posy < height) {
+						x_prev = x_next;
+						input_texture2[idx_c] = x_prev.r;
+						input_texture2[idx_c + global_stride] = x_prev.g;
+						input_texture2[idx_c + global_stride * 2] = x_prev.b;
+					}
+					
+					idx_c += stride;
+
+					#ifdef DIRECTION_X
+						posx += num_sys;
+					#else
+						posy += num_sys;
+					#endif
+				} 
+				
+				#if defined(DIRECTION_X) && defined(BACKWARD_TRACE_IN_SMEM)
+					int threadGroupIdx = localThreadID.y * BLOCK_SIZE_X + localThreadID.x; 
+					int smemStartIdx = localThreadID.y * warp + localThreadID.x;
+
+					int idx_gmem = idx_c;
+					//int idx_gmem_base = groupID.y * BLOCK_SIZE_Y * width + stride * (n - flush_count + 1) + threadGroupIdx % warp;
+					int idx_gmem_base = groupID.y * BLOCK_SIZE_Y * width_aligned + stride * (n - flush_count + 1) + threadGroupIdx % warp;
+
+					x_prev = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+					// backward trace
+					//int f_size = ceil((float)(n-1) / flush_count);
+					int f_size = ceil((float)(n+1) / flush_count);
+					//i = n+1;
+					for (int f = 0; f < f_size; f++) {
+						GroupMemoryBarrierWithGroupSync();
+						
+						// fill smem
+						[loop]
+						for (int c = 0; c < flush_count; c++) {
+							int c_stride = c * BLOCK_SIZE_X * BLOCK_SIZE_Y;
+							//int y_stride = (localThreadID.y / flush_count + c * flush_count) * width;
+							int y_stride = (localThreadID.y / flush_count + c * flush_count) * width_aligned;
+							smem[threadGroupIdx + c_stride] = input_texture2[idx_gmem_base + y_stride];
+							smem[threadGroupIdx + smem_size + c_stride] = input_texture2[idx_gmem_base + global_stride + y_stride];
+							smem[threadGroupIdx + smem_size * 2 + c_stride] = input_texture2[idx_gmem_base + global_stride * 2 + y_stride];
+						}
+						GroupMemoryBarrierWithGroupSync();
+
+						x_next.r = input_texture2[idx_gmem - stride];
+						x_next.g = input_texture2[idx_gmem + global_stride - stride];
+						x_next.b = input_texture2[idx_gmem + global_stride * 2 - stride];
+
+						int column = num_sys * (flush_count-1);
+						[loop]
+						for (int tid = 0; tid < flush_count; tid++, i--) {
+							idx_gmem -= stride;
+
+							// update current
+							x_next += x_prev * a[i];
+
+							// store in smem
+							smem[smemStartIdx + column] = x_prev.r = x_next.r;
+							smem[smemStartIdx + smem_size + column] = x_prev.g = x_next.g;
+							smem[smemStartIdx + smem_size * 2 + column] = x_prev.b = x_next.b;
+							column -= num_sys;   
+
+							// next value   
+							x_next.r = smem[smemStartIdx + column];
+							x_next.g = smem[smemStartIdx + smem_size + column];
+							x_next.b = smem[smemStartIdx + smem_size * 2 + column];
+						}
+
+						GroupMemoryBarrierWithGroupSync();
+
+						// flush to gmem
+						[loop]
+						for (int c = 0; c < flush_count; c++) {
+							int c_stride = c * BLOCK_SIZE_X * BLOCK_SIZE_Y;
+							//int y_stride = (localThreadID.y / flush_count + c * flush_count) * width;
+							int y_stride = (localThreadID.y / flush_count + c * flush_count) * width_aligned;
+							input_texture2[idx_gmem_base + y_stride] = smem[threadGroupIdx + c_stride];
+							input_texture2[idx_gmem_base + global_stride + y_stride] = smem[threadGroupIdx + smem_size + c_stride];
+							input_texture2[idx_gmem_base + global_stride * 2 + y_stride] = smem[threadGroupIdx + smem_size * 2 + c_stride];
+						}    
+
+						idx_gmem_base -= stride * flush_count;
+
+						GroupMemoryBarrierWithGroupSync();
+					}
+				#else					
+					idx_c -= stride;
+					
+					// backward trace				
+					//for (i = 0; i <= (n-1); i++)
+					//for (i = n - 1; i >= 0; i--) // looping like this does not work on ATI hardware!!
+					for (i -= 2; i >= 0; i--)
+					{
+						idx_c -= stride;					
+						
+						x_next.r = input_texture2[idx_c];
+						x_next.g = input_texture2[idx_c + global_stride];
+						x_next.b = input_texture2[idx_c + global_stride * 2];
+						
+						//int tmp = (n-1)-i;
+						int tmp = i;
+						x_next += x_prev * a[tmp+1];
+						
+						input_texture2[idx_c] = x_prev.r = x_next.r;
+						input_texture2[idx_c + global_stride] = x_prev.g = x_next.g;
+						input_texture2[idx_c + global_stride * 2] = x_prev.b = x_next.b;
+					}
+				#endif
+			}			
+		"""
+	}
+	
+	depth_blur = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			depth = { sampler_states = "clamp_point" }	
+			input_texture0 = { sampler_states = "clamp_point" }	
+			input_texture1 = { sampler_states = "clamp_linear" }	
+		}		  
+		
+		code="""
+			sampler2D depth;
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float2 far;  	// exports={ name="Far Focus (distance/fade)" type="vector2" value=[10 1] min=[0 0] max=[800 50] step=[0.1 0.1] }
+				float amount; 	// exports={ name="Dof Amount" type="scalar" value=1.0 min=0.0 max=1.0 step=0.001 }			
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = mul(input.position, world_view_proj);				
+				p.z = 1;
+				o.position = p;
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));				
+				float a = d > far.x ? amount * saturate((d-far.x) / far.y) : 0;
+				return float4(lerp(tex2D(input_texture0, input.uv).rgb, tex2D(input_texture1, input.uv).rgb, a),0);				
+			}	
+		"""
+	}
+}
+
+shaders = {
+	copy = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="copy" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+	
+	luminance_adaption = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="luminance_adaption" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}	
+	
+	ssao_upscale = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="ssao_upscale" render_states="ssao_upscale" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+
+	bilateral_upscale = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="bilateral_upscale" render_states="ssao_upscale" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+
+	vo_ssao = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="vo_ssao" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+	
+	ssao_blur = {
+		editor_advanced_mode = true	
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="ssao_blur" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+		
+	tone_mapping = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="tone_mapping" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	depth_fog = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="depth_fog" render_states="depth_fog" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+
+	depth_blur = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="depth_blur" render_states="filter" }
+					]					
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+		
+	filter = {
+		editor_advanced_mode = true
+		
+		editor_options = [
+			{
+				name="Filter"
+				options = [
+					{ name="Box" define="BOX" }					
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="filter" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}		
+		
+	blend = {
+		editor_advanced_mode = true
+		
+		editor_options = [
+			{
+				name="Blend"
+				options = [
+					{ name="Screen" define="SCREEN" }	
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="blend" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	dof_initial_downsample = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="dof_initial_downsample" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+
+	dof_near_coc = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="dof_near_coc" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	dof_apply = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="dof_apply" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+	
+	dof = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="dof" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}		
+	
+	nv_dof_compute_radius = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="nv_dof_compute_radius" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}	
+
+	nv_dof_compute_radius_far = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="nv_dof_compute_radius_far" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}
+	
+	nv_dof_tridiagonal_fill = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="nv_dof_tridiagonal_fill" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}	
+
+	nv_dof_pcr_step = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="nv_dof_pcr_step" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}
+
+	nv_dof_sweep_pcr_vector = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="nv_dof_sweep_pcr_vector" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}
+	
+	cs_gaussian_blur = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [
+					{ hlsl_shader="cs_gaussian_blur" }
+				]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="" render_caps={ feature_level="DX11_0" } }
+			]
+		} 
+	}	
+	
+	downscale_depth = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+					]
+					fail = [
+						{ hlsl_shader="downscale_depth" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+} 
+
+static_compile= [ 	
+	{ shader="copy" defines="" } 
+	{ shader="copy" defines="ENCODE_AS_RGBM" }
+	{ shader="copy" defines="INTERLEAVE_BUFFER" platforms="D3D11" } 
+	{ shader="luminance_adaption" defines="" } 
+	{ shader="filter" defines="BOX" } 
+	{ shader="filter" defines="DOWNSAMPLE_4x4" } 
+	{ shader="filter" defines="GAUSSIAN_BLUR_13TAP" } 
+	{ shader="filter" defines="SEPARABLE_GAUSSIAN_13TAP_X" } 
+	{ shader="filter" defines="SEPARABLE_GAUSSIAN_13TAP_Y" } 	
+	{ shader="filter" defines="DEPTH_AWARE SEPARABLE_GAUSSIAN_13TAP_X" } 
+	{ shader="filter" defines="DEPTH_AWARE SEPARABLE_GAUSSIAN_13TAP_Y" } 	
+	{ shader="filter" defines="LOG_LUMINANCE" } 
+	{ shader="blend" defines="" } 	
+	{ shader="blend" defines="SCREEN" } 		
+	{ shader="tone_mapping" defines="" } 
+	{ shader="tone_mapping" defines="LUMINANCE_ADAPTION" } 
+	{ shader="tone_mapping" defines="FILMIC LUMINANCE_ADAPTION"}
+	{ shader="tone_mapping" defines="COLOR_GRADING FILMIC LUMINANCE_ADAPTION VIGNETTE"}
+	{ shader="tone_mapping" defines="BRIGHT_PASS FILMIC LUMINANCE_ADAPTION"}	
+	{ shader="depth_fog" defines="" }
+	{ shader="dof_initial_downsample" defines="" }
+	{ shader="dof_near_coc" defines="" }	
+	{ shader="dof_apply" defines="" }
+	{ shader="nv_dof_compute_radius" defines="" platforms="D3D11" }
+	{ shader="nv_dof_compute_radius_far" defines="" platforms="D3D11" }
+	{ shader="nv_dof_tridiagonal_fill" defines="DIRECTION_X" platforms="D3D11" }
+	{ shader="nv_dof_tridiagonal_fill" defines="DIRECTION_Y" platforms="D3D11" }
+	{ shader="nv_dof_pcr_step" defines="DIRECTION_X ITER1" platforms="D3D11" }
+	{ shader="nv_dof_pcr_step" defines="DIRECTION_X ITER2" platforms="D3D11" }
+	{ shader="nv_dof_pcr_step" defines="DIRECTION_X ITER3" platforms="D3D11" }
+	{ shader="nv_dof_pcr_step" defines="DIRECTION_Y ITER1" platforms="D3D11" }
+	{ shader="nv_dof_sweep_pcr_vector" defines="DIRECTION_X" platforms="D3D11" }
+	{ shader="nv_dof_sweep_pcr_vector" defines="DIRECTION_Y" platforms="D3D11" }	
+	{ shader="downscale_depth" }
+	{ shader="depth_blur" defines="" }
+	
+	{ shader="dof" defines="DOWNSCALE_COC" }
+	{ shader="dof" defines="SEPARABLE_GAUSSIAN_13TAP_X" }
+	{ shader="dof" defines="SEPARABLE_GAUSSIAN_13TAP_Y" }	
+	{ shader="dof" defines="APPLY" }	
+	
+	{ shader="vo_ssao" }
+	{ shader="ssao_upscale" }
+	{ shader="ssao_blur" defines="SEPARABLE_GAUSSIAN_13TAP_X" }
+	{ shader="ssao_blur" defines="SEPARABLE_GAUSSIAN_13TAP_Y" }
+	//{ shader="bilateral_upscale" platforms="D3D11" }
+]
+

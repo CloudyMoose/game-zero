@@ -1,0 +1,26 @@
+
+default = {
+	material_contexts = {
+	}
+	shader = "base:INSTANCED"
+	textures = {
+	}
+	variables = {
+		diffuse_rgb = {
+			type = "vector3"
+			value = [
+				0.65
+				1
+				0.539
+			]
+		}
+		glossiness = {
+			type = "scalar"
+			value = 0.5
+		}
+		specular = {
+			type = "scalar"
+			value = 0.8
+		}
+	}
+}

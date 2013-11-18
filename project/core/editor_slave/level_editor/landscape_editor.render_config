@@ -1,0 +1,50 @@
+// ---------------------------------------------------------------------------------------------------
+// resource effects
+
+resource_generators = {
+	landscape_editor_blit = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="copy" input="input" output="output" }
+		]
+	}
+	
+	landscape_editor_brush = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_editor_brush" draw_as_quad=true output="output" }
+		]		
+	}	
+	
+	landscape_editor_brush_subtract = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SUB" draw_as_quad=true output="output" }
+		]		
+	}	
+	
+	landscape_editor_brush_flatten = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SAMPLE_BASED:SAMPLE" draw_as_quad=true input="output" output="smooth_buffer0" }
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SAMPLE_BASED:FLATTEN" draw_as_quad=true input="smooth_buffer0" output="output" }
+		]		
+	}	
+
+	landscape_editor_brush_smooth_box = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SAMPLE_BASED:SAMPLE" draw_as_quad=true input="output" output="smooth_buffer0" }
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SAMPLE_BASED:BOX_FILTER" draw_as_quad=true input="smooth_buffer0" output="output" }
+		]		
+	}	
+	
+	landscape_editor_sample_height = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_editor_brush:SAMPLE_HEIGHT" output="height_sample" }
+		]
+	}
+}
+
+brush_resource_generator_mapping = {
+	draw_add = "landscape_editor_brush"
+	draw_sub = "landscape_editor_brush_subtract"
+	sample_height = "landscape_editor_sample_height"
+	flatten = "landscape_editor_brush_flatten"
+	smooth = "landscape_editor_brush_smooth_box"
+}

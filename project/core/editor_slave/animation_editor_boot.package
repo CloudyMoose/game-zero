@@ -1,0 +1,2 @@
+lua = ["core/editor_slave/animation_editor"]
+physics_properties = ["global"] 

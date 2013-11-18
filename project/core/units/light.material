@@ -1,0 +1,26 @@
+
+light = {
+	shader = "base:DIFFUSE_MAP:SELF_ILLUMINATION_MAP"
+	textures = {
+		diffuse_map = "core/units/camera_mesh_df"
+		self_illumination_map = "core/units/camera_mesh_df"
+	}
+	variables = {
+		glossiness = {
+			type = "scalar"
+			value = 0.1
+		}
+		self_illumination_multiplier = {
+			type = "scalar"
+			value = 0.66
+		}
+		specular = {
+			type = "scalar"
+			value = 0
+		}
+	}
+}
+
+ao_source = {
+	shader = "ao_source"
+}

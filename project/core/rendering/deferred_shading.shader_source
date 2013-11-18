@@ -1,0 +1,2571 @@
+includes = [ "core/rendering/common.shader_source" ] 
+
+render_states = {
+	filter = {
+		inherits = "default"
+		states = {
+			z_write_enable = "false"
+			z_enable = "false"
+		}
+	}
+	
+	filter_srgb = {
+		inherits = "filter"
+		states = {
+			srgb0 = "true"
+		}
+	}
+
+	filter_op = {
+		inherits = "opacity"
+		states = {
+			z_enable = "false"
+			z_write_enable = "false"
+		}
+	}
+	
+	filter_add = {
+		inherits = "filter"
+		states = {
+			blend_enable = "true"
+			blend_op = "blend_op_add"
+			dest_blend = "blend_one"
+			src_blend = "blend_one"
+		}
+	}	
+	
+	filter_exclude_skybox = {
+		inherits = "filter"
+		states = {
+			z_func = "greater"			
+			z_enable = "true"
+		}
+	}
+
+	ao_cone_trace = {
+		inherits = "filter"
+		states = {
+			ndefined_X360 = {
+				blend_enable = "true"
+				write_mask0 = "alpha"
+				blend_op = "blend_op_min"
+				dest_blend = "blend_one"
+				src_blend = "blend_one"
+			}
+		}
+	}
+	
+	gbuffer_debug = {
+		inherits = "filter"
+		states = {
+			defined_FILL_ALBEDO = {
+				write_mask0 = "red|green|blue"
+			}
+			defined_FILL_UNTOUCHED_PIXELS = {
+				z_enable = "true"
+				z_func = "lessequal"				
+			}
+		}
+	}	
+
+	
+	light = {
+		inherits = "default"
+		states = {
+			z_enable = "true" 
+			z_func = "greater_equal"
+			z_write_enable = "false"
+			cull_mode = "cull_ccw"
+			blend_enable = "true"
+			blend_op = "blend_op_add"
+			dest_blend = "blend_one"
+			src_blend = "blend_one"
+			
+			defined_D3D11 = {
+				stencil_enable = "true"
+				stencil_func = "equal"
+				stencil_fail = "stencil_op_keep"
+				stencil_mask = "0x18"
+				stencil_pass = "stencil_op_keep"
+				stencil_write_mask = "0x18"
+				stencil_z_fail = "stencil_op_keep"			
+				
+				stencil_func_back_side = "equal"
+				stencil_fail_back_side = "stencil_op_keep"
+				stencil_pass_back_side = "stencil_op_keep"
+				stencil_z_fail_back_side = "stencil_op_keep"			
+				
+				defined_SKIN = {
+					stencil_ref = "0x8"
+				}
+				ndefined_SKIN = {
+					stencil_ref = "0x0"
+				}
+			}
+		}
+	}	
+
+	ao_source = {
+		inherits = "default"
+		states = {
+			z_enable = "true" 
+			z_func = "greater_equal"
+			z_write_enable = "false"
+			cull_mode = "cull_ccw"
+			
+			write_mask0 = "alpha"			
+			blend_enable = "true"
+			blend_op = "blend_op_min"
+			dest_blend = "blend_one"
+			src_blend = "blend_one"				
+		}
+	}
+	
+	mobile_light = {
+		inherits = "default"
+		states = {
+			z_enable = "true" 
+			z_func = "greater_equal"
+			z_write_enable = "false"
+			cull_mode = "cull_ccw"
+			blend_enable = "true"
+			blend_op = "blend_op_add"
+			dest_blend = "blend_one"
+			src_blend = "blend_dest_color"			
+		}
+	}	
+
+	global_lighting = {
+		inherits = "filter"
+		states = {			
+			defined_D3D11 = {
+				stencil_enable = "true"
+				stencil_func = "equal"
+				stencil_fail = "stencil_op_keep"
+				stencil_mask = "0x18"
+				stencil_pass = "stencil_op_keep"
+				stencil_write_mask = "0x18"
+				stencil_z_fail = "stencil_op_keep"			
+				
+				stencil_func_back_side = "equal"
+				stencil_fail_back_side = "stencil_op_keep"
+				stencil_pass_back_side = "stencil_op_keep"
+				stencil_z_fail_back_side = "stencil_op_keep"					
+				
+				defined_SKIN = {				
+					stencil_ref = "0x8"
+				}
+				ndefined_SKIN = {
+					stencil_ref = "0x0"
+				}
+			}
+		}
+	}	
+
+	volume_light = {
+		inherits = "filter_add"
+		states = {
+			cull_mode="cull_ccw"
+			z_func = "always"
+		}
+	}	
+	
+	light_debug = {
+		inherits = "filter_add"
+		states = {
+			blend_enable = "false"
+			cull_mode="cull_ccw"
+			z_func = "greater_equal"
+		}
+	}	
+	
+	global_shadow_mask = {
+		inherits = "filter"
+		states = {
+			write_mask0 = "red"
+			stencil_enable = "true"
+			stencil_func = "equal"
+			stencil_fail = "stencil_op_keep"
+			stencil_pass = "stencil_op_keep"
+			defined_FILL = {
+				stencil_ref = "0x0"
+			}
+			ndefined_FILL = {
+				stencil_ref = "0x1"
+			}			
+			stencil_z_fail = "stencil_op_keep"
+			
+			defined_GCM = {
+				// Make sure not to break SCULL. TODO: Expose SCULL & ZCULL control
+				stencil_mask = "0xff" //"0x7"
+				stencil_write_mask = "0xff" //"0x7"
+			}
+			ndefined_GCM = {
+				stencil_mask = "0x7"
+				stencil_write_mask = "0x7"				
+			}
+			
+			ndefined_FILL = {
+				defined_X360 = {
+					hi_stencil_enable = "true"
+					hi_stencil_write_enable = "false"
+					hi_stencil_func = "hs_equal"
+					hi_stencil_ref = "0x0"
+				}
+			}
+		}
+	}
+	
+	shadow_cutter = {
+		inherits = "default"
+		states = {
+			cull_mode="cull_ccw"
+			
+			z_enable = "true"
+			z_write_enable = "false"			
+			
+			write_mask0 = "0x0"
+			write_mask1 = "0x0"
+			write_mask2 = "0x0"
+			write_mask3 = "0x0"
+			
+			stencil_enable = "true"
+			stencil_func = "always"
+			stencil_fail = "stencil_op_keep"
+			stencil_pass = "stencil_op_keep"
+			stencil_ref = "0x0" 
+			stencil_z_fail = "stencil_op_incr"
+
+			stencil_func_back_side = "always"
+			stencil_fail_back_side = "stencil_op_keep"
+			stencil_pass_back_side = "stencil_op_keep"
+			stencil_z_fail_back_side = "stencil_op_incr"
+			
+			defined_GCM = {
+				// Make sure not to break SCULL. TODO: Expose SCULL & ZCULL control
+				stencil_mask = "0xff" //"0x7"
+				stencil_write_mask = "0xff" //"0x7"
+			}
+			ndefined_GCM = {
+				stencil_mask = "0x7"
+				stencil_write_mask = "0x7"				
+			}			
+			
+			defined_X360 = {
+				hi_stencil_enable = "false"
+				hi_stencil_write_enable = "true"
+				hi_stencil_func = "hs_equal"
+				hi_stencil_ref = "0x0"
+			}
+		}
+	}
+	
+	filter_mark_stencil_one = {
+		inherits = "filter"
+		states = {
+			stencil_enable = "true"
+			stencil_func = "always"
+			stencil_fail = "stencil_op_keep"
+			stencil_mask = "0xff"
+			stencil_pass = "stencil_op_replace"
+			stencil_ref = "0x1"
+			stencil_write_mask = "0xff"
+			stencil_z_fail = "stencil_op_keep"
+		}
+	}
+
+	filter_stencil_equal_one = {
+		inherits = "filter_mark_stencil_one"
+		states = {
+			stencil_enable = "true"
+			stencil_func = "equal"
+			stencil_pass = "stencil_op_keep"
+			stencil_ref = "0x1"
+		}
+	}
+	
+	skin_filter = {
+		inherits = "default"
+		states = {			
+			z_write_enable = "false"
+			z_enable = "false"
+			
+			stencil_enable = "true"
+			stencil_func = "equal"
+			stencil_fail = "stencil_op_keep"
+			stencil_mask = "0x18"
+			stencil_pass = "stencil_op_keep"
+			stencil_ref = "0x8"
+			stencil_write_mask = "0x18"
+			stencil_z_fail = "stencil_op_keep"
+			
+			stencil_func_back_side = "equal"
+			stencil_fail_back_side = "stencil_op_keep"
+			stencil_pass_back_side = "stencil_op_keep"
+			stencil_z_fail_back_side = "stencil_op_keep"
+
+			defined_STEP0 = {
+				blend_factor_r = "0.3251"
+				blend_factor_g = "0.45"
+				blend_factor_b = "0.3583"
+			}
+			defined_STEP1 = {
+				blend_factor_r = "0.34"
+				blend_factor_g = "0.1864"
+				blend_factor_b = "0.0"
+			}
+			defined_STEP2 = {
+				blend_factor_r = "0.46"
+				blend_factor_g = "0.0"
+				blend_factor_b = "0.0402"
+			}
+			
+			defined_INDEPENDENT_BLEND = {
+				defined_DIRECTION_X = {
+					independent_blend_enable = "false"					
+				}				
+				defined_DIRECTION_Y = {
+					independent_blend_enable = "true"
+					// blend_enable0 should be set to false but due to a bug in the latest nvidia driver that causes blending to get disabled for MRT1 as well..?! 
+					blend_enable0 = "true"
+					src_blend0 = "blend_one"
+					dest_blend0 = "blend_zero"
+					blend_enable1 = "true"
+					src_blend1 = "blend_blend_factor"
+					dest_blend1 = "blend_inv_blend_factor"
+				}				
+			}
+			
+			ndefined_INDEPENDENT_BLEND = {
+				defined_BLEND = {
+					blend_enable = "true"					
+					src_blend = "blend_blend_factor"
+					dest_blend = "blend_inv_blend_factor"
+				}					
+			}				
+		}
+	}
+	
+	skin_filter_cheap = {
+		inherits = "default"
+		states = {			
+			z_write_enable = "false"
+			z_enable = "false"
+			
+			stencil_enable = "true"
+			stencil_func = "equal"
+			stencil_fail = "stencil_op_keep"
+			stencil_mask = "0x18"
+			stencil_pass = "stencil_op_keep"
+			stencil_ref = "0x8"
+			stencil_write_mask = "0x18"
+			stencil_z_fail = "stencil_op_keep"
+			
+			stencil_func_back_side = "equal"
+			stencil_fail_back_side = "stencil_op_keep"
+			stencil_pass_back_side = "stencil_op_keep"
+			stencil_z_fail_back_side = "stencil_op_keep"
+		}
+	}
+}
+
+sampler_states = {
+	shadow_map = {
+		inherits = "clamp_point"
+		states = { 			
+			defined_D3D11 = {
+				comparison_func = "less"
+				filter = "comparison_min_mag_linear_mip_point"
+			}
+			defined_GCM = {
+				comparison_func = "less"
+				filter = "min_mag_mip_linear"
+			}
+			defined_GL2 = {
+				comparison_func = "less"
+				filter = "min_mag_mip_linear"
+			}
+		}
+	}
+	
+	clamp_linear_mip_point = {
+		inherits="clamp"
+		states = { 
+			filter = "min_mag_linear_mip_point"			
+		}	
+	}	
+}
+
+hlsl_shaders = {	
+	torrance_sparrow = {
+		code="""
+			#define USE_TORRANCE_SPARROW
+			
+			// Torrance Sparrow with Blinn Phong PDF approximation as described in: 
+			// http://blog.selfshadow.com/publications/s2012-shading-course/mcauley/s2012_pbs_farcry3_notes_v2.pdf			
+			float3 torrance_sparrow_blinn_phong(float3 cspec, float3 h, float3 v, float3 n, float glossiness) {
+				float energy_consveration_and_schlick_smith_approx = (2*glossiness+1) / 8;
+				float3 fresnel_schlick_approx = cspec + (1-cspec) * exp(-6*dot(h, v));
+				return energy_consveration_and_schlick_smith_approx * fresnel_schlick_approx * pow(saturate(dot(h,n)), glossiness);				
+			}		
+		"""
+	}
+	
+	skin_specular = {
+		samplers = {
+			beckmann_lut = { sampler_states = "clamp_linear" }			
+		}
+		
+		code="""
+			sampler2D beckmann_lut;
+			
+			float KelemenSzirmayKalosSpec( float3 V, float3 N, float3 L, float4 eccentricity, float rollOff, float4 weight )
+			{
+				float spec = 0;
+
+				float cosne = dot( V, N );
+				float cosln = dot( N, L );
+
+				if( cosln > 0 )
+				{
+					float3 h = L + V;
+					float3 H = normalize( h );
+
+					float coseh = dot( H, V );
+					float cosnh = dot( H, N );
+
+					//      float alpha = acos( cosnh );
+					//      float ta = tan( alpha );
+
+					float cosnhPow2 = cosnh*cosnh;
+					float ta = sqrt( 1 - cosnhPow2 ) / cosnh;
+
+
+					float cosnhPow4 = cosnhPow2*cosnhPow2;
+					float4 eccPow2 = eccentricity * eccentricity;
+
+					float4 pH = exp( -( ta * ta )  / ( eccPow2 ) ) / ( eccPow2 * cosnhPow4 );
+
+					// A Schlick Fresnel
+					float cosehPow = pow( 1 - coseh, 5.0 );
+
+					float Ff = cosehPow + ( 1 - cosehPow ) / rollOff;
+
+					float4 specCoeff = max ( ( pH * Ff ) / dot( h, h ), 0 );
+
+					spec = saturate( cosln ) * dot( specCoeff, weight );
+				}
+
+				return spec;
+			}			
+			
+			float fresnel_reflectance( float3 H, float3 V, float F0 )  {  
+				float base = 1.0 - dot( V, H );
+				float exponential = pow( base, 5.0 );
+				return exponential + F0 * ( 1.0 - exponential );
+			}
+			
+			// From GPU Gems3
+			float ks_skin_specular( float3 N, // Bumped surface normal  
+				float3 L, // Points to light  
+				float3 V, // Points to eye  
+				float m,  // Roughness  
+				float rho_s // Specular brightness  
+				)  
+			{  
+				float result = 0.0;  
+				float3 h = L + V; // Unnormalized half-way vector  
+				float3 H = normalize( h );  
+				float ndoth = dot( N, H );  
+				float PH = pow( 2.0*tex2Dlod(beckmann_lut,float4(ndoth,m,0,0)), 10.0);  
+				float F = fresnel_reflectance(H, V, 0.028);  
+				float frSpec = max( PH * F / dot( h, h ), 0 );  
+				result = rho_s * frSpec; // BRDF * dot(N,L) * rho_s  
+				return result;  
+			}		
+		"""
+	}
+	
+	global_lighting = {		
+		includes = [ "common", "gbuffer_access", "skin_specular", "torrance_sparrow" ]
+		samplers = {
+			albedo = { sampler_states = "clamp_point" }	
+			normal = { sampler_states = "clamp_point" }	
+			depth = { sampler_states = "clamp_point" }				
+			mask = { sampler_states = "clamp_point" }
+			self_illumination = { sampler_states = "clamp_point" }			
+		}
+		
+		code="""
+			sampler2D albedo; 
+			sampler2D normal;
+			sampler2D depth;			
+			sampler2D mask;
+			sampler2D self_illumination;			
+			
+			#if defined(D3D11) && defined(NV_STEREO)
+				Texture2D<float4> nv_stereo_params;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float4 w : TEXCOORD1;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float3 ambient_top_color; // exports={ name="Ambient Top Color" type="vector3" value=[0.2 0.2 0.2] min=[0 0 0] max=[5 5 5] step=[0.003 0.003 0.003] }
+				float3 ambient_bottom_color; // exports={ name="Ambient Bottom Color" type="vector3" value=[0.1 0.1 0.1] min=[0 0 0] max=[5 5 5] step=[0.003 0.003 0.003] }				
+				float ambient_camera_falloff; // exports={ name="Ambient Camera Falloff" type="scalar" value=0.25 min=0 max=1 step=0.001 }				
+				float3 sun_color; // exports={ name="Sun Color" type="vector3" value=[1.0 1.0 1.0] min=[0 0 0] max=[5 5 5] step=[0.003 0.003 0.003] }
+				float3 sun_direction; // exports={ name="Sun Direction" type="vector3" value=[0.0 0.0 -1.0] min=[-1 -1 -1] max=[1 1 1] step=[0.003 0.003 0.003] }							
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				o.w = encode_world_pos(o.position, camera_unprojection);				
+				return o;
+			}
+			
+			struct PS_OUTPUT {
+				#ifdef SKIN
+					float4 specular : SV_TARGET0;
+					float4 base : SV_TARGET1;
+				#else
+					float4 base : SV_TARGET0;
+				#endif
+			};			
+			
+			PS_OUTPUT ps_main(PS_INPUT input) {	
+				PS_OUTPUT o;
+				
+				half4 albedo_specular_mask = tex2D(albedo, input.uv);
+				half3 albedo = gbuffer_decode_albedo(albedo_specular_mask);
+				half specular_mask = gbuffer_decode_specular_mask(albedo_specular_mask);				
+				
+				half4 normal_glossiness = tex2D(normal, input.uv);
+				half3 wn = normalize(gbuffer_decode_normal(normal_glossiness));
+				half glossiness = gbuffer_decode_glossiness(normal_glossiness, MAX_GLOSSINESS);
+				float specular_energy_conservation = (glossiness + 8) / (8 * 3.14159);
+				float e = (2*glossiness+1) / 8;
+				
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));
+
+				float3 wp = decode_world_pos(input.w, d);
+
+				half4 gbuffer_mask = tex2D(mask, input.uv);
+				
+				half shadow = gbuffer_mask.r;				
+				half material_idx = gbuffer_mask.g;
+								
+				half diffuse_multiplier = (material_idx == CLOTH_MATERIAL) ? gbuffer_mask.b * 2 : 1.f;
+				half3 specular_col = (material_idx >= COLORED_SPECULAR_MATERIAL) ? half3(gbuffer_mask.gb * gbuffer_mask.gb, specular_mask) : specular_mask.rrr;
+
+				half ao = gbuffer_mask.a;
+				
+				half3 view_vector = normalize(camera_world._m30_m31_m32 - wp);				
+								
+				half3 s_dir = normalize(-sun_direction);
+				half3 sun_h = normalize(view_vector + s_dir);				
+				half sun_a = saturate(dot(s_dir, wn));
+				half3 sun = saturate(sun_a*diffuse_multiplier) * sun_color * albedo;
+				
+				#ifdef SKIN
+					float s = ks_skin_specular(wn, s_dir, view_vector, gbuffer_decode_glossiness(normal_glossiness, 1), specular_mask);					
+					o.specular = float4(shadow * sun_a * sun_color * s, 0);
+				#else
+					#ifdef USE_TORRANCE_SPARROW
+						sun += sun_a * sun_color * torrance_sparrow_blinn_phong(specular_col, sun_h, view_vector, wn, glossiness);
+					#else
+						float s = specular_energy_conservation * pow(saturate(dot(sun_h,wn)), glossiness);				
+						sun += sun_a * sun_color * s * specular_col;										
+					#endif
+				#endif				
+				
+				half3 ambient = lerp(ambient_bottom_color, ambient_top_color, wn.z*0.5+0.5);
+				ambient = ao * lerp(ambient, ambient * (1-saturate(dot(view_vector, wn))), ambient_camera_falloff);				
+				ambient *= albedo;				
+				
+				half3 output = diffuse_multiplier * ambient + sun * shadow;
+				#ifndef X360					
+					output += gbuffer_decode_self_illumination(tex2D(self_illumination, input.uv));
+				#endif				
+								
+				#ifdef SKIN						
+					o.base = float4(output, gbuffer_mask.b);		
+				#else					
+					o.base = float4(output, 0);	
+				#endif
+				
+				//o.base = float4(ao, ao, ao, 0);
+				
+				return o;
+			}	
+		"""
+	}
+	
+	light_source = {		
+		includes = [ "common", "gbuffer_access", "skin_specular", "torrance_sparrow" ]
+		
+		samplers = {
+			defined_SHADOW_MAPPING = {
+				defined_D3D11 = {
+					shadow_map_sampler = { sampler_states = "shadow_map" }	
+					shadow_map_cube = { sampler_states = "clamp_point" }	
+				}
+				defined_GCM = {
+					shadow_map = { sampler_states = "shadow_map" }	
+				}
+				defined_X360 = {
+					shadow_map = { sampler_states = "shadow_map" }	
+				}
+				defined_GL2 = {
+					shadow_map = { sampler_states = "shadow_map" }	
+				}
+			}
+			ndefined_D3D11 = {				
+				albedo = { sampler_states = "clamp_point" }
+				normal = { sampler_states = "clamp_point" }
+				depth = { sampler_states = "clamp_point" }
+				mask = { sampler_states = "clamp_point" }
+			}			
+		}
+		
+		code="""
+			#if defined(GCM) || defined(X360) || defined(GL2)
+				sampler2D albedo;
+				sampler2D normal;
+				sampler2D depth;
+				sampler2D mask;
+			#else
+				Texture2D<float4> albedo;
+				Texture2D<float4> normal;
+				Texture2D<float4> depth;
+				Texture2D<float4> mask;
+			#endif
+			
+			#if defined(SHADOW_MAPPING)	&& defined(D3D11)
+				SamplerComparisonState shadow_map_sampler;				
+				#if defined(OMNI)
+					TextureCube<float> shadow_map_cube;					
+				#elif defined(SPOT)
+					Texture2D<float> shadow_map;
+				#endif
+			#endif
+			#if defined(SHADOW_MAPPING) && defined(SPOT) && (defined(GCM) || defined(X360))
+				sampler2D shadow_map;
+			#elif defined(SHADOW_MAPPING) && defined(SPOT) && defined(GL2)
+				sampler2DShadow shadow_map;
+			#endif
+			
+			#if defined(NV_STEREO) && defined(D3D11)
+				Texture2D<float4> nv_stereo_params;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				float4 w : TEXCOORD1;
+			};
+			
+			CBUFFER_START(c0)
+				#ifdef SPOT
+					float4x4 world;
+				#endif
+				float4x4 world_view_proj;
+			CBUFFER_END
+			
+			CBUFFER_START(Light)
+				float3 light_position;
+				float3 light_color;
+				float3 light_falloff; // start, 1.f/(end-start), exp				
+				float3 light_proxy_scale;				
+				#ifdef SPOT					
+					float2 light_spot_falloff; // start, 1.f/(end-start)
+					#if defined(SHADOW_MAPPING)
+						float4x4 world_to_shadow_map;
+					#endif
+				#endif				
+				#if defined(OMNI)
+					#if defined(SHADOW_MAPPING)
+						float3 light_vector_to_shadow_map;
+					#endif
+				#endif				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;				
+				o.position = mul(float4(input.position.xyz * light_proxy_scale, 1), world_view_proj);				
+				o.w = encode_world_pos(o.position, camera_unprojection);				
+				return o;
+			}						
+			
+			#ifdef GCM
+				half pcf_shadow_2d(sampler2D sm, float4 ls, int2 p) {						
+					half shadow = 0;
+					shadow += tex2Dproj(shadow_map, ls);
+					return 1 - shadow;
+				}
+			#elif defined(GL2)
+				half pcf_shadow_2d(sampler2DShadow shadow_map, float4 ls) {
+					float3 tscale = float3(1.f / 1024.f, 1.f / 1024.f, 0);
+					half shadow = 0;
+					
+					ls.xyz /= ls.w;
+					ls.z = ls.z*0.5 + 0.5;
+					
+					shadow += tex2D(shadow_map, ls + float3(-0.5, -0.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, ls + float3(-0.5, -1.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, ls + float3(-1.5, -0.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, ls + float3(-1.5, -1.5, 0)*tscale).r;
+					
+					return shadow * 0.25;
+				}
+			#endif
+			
+			struct PS_OUTPUT {
+				#ifdef SKIN
+					half4 specular : SV_TARGET0;
+					half4 base : SV_TARGET1;
+				#else					
+					half4 base : SV_TARGET0;
+				#endif
+			};
+						
+			PS_OUTPUT ps_main(PS_INPUT input
+				#ifdef GCM
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float2 wpos : VPOS
+				#endif
+				)
+			{	
+				PS_OUTPUT o;
+				o.base = half4(0,0,0,0);
+				#ifdef SKIN
+					o.specular = half4(0,0,0,0);
+				#endif
+				
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					half2 uv = wpos.xy / back_buffer_size;					
+					float d = gbuffer_decode_depth(tex2D(depth, uv));
+				#else
+					float d = gbuffer_decode_depth(depth.Load(int3(input.position.xy, 0)));
+				#endif			
+				
+				#if defined(NV_STEREO) && defined(D3D11)
+					float4 stereo = nv_stereo_params.Load(int3(0,0,0));
+					float3 wp = decode_world_pos(input.w, d, stereo);					
+				#else
+					float3 wp = decode_world_pos(input.w, d);
+				#endif			
+				
+				float3 view_vector = normalize(camera_world._m30_m31_m32 - wp);
+				
+				float3 light_vector = light_position - wp;
+				float3 abs_light_vector = abs(light_vector);
+				float l = length(light_vector) + 0.00001;
+				float attn = (l > light_falloff.x ? 1-saturate((l-light_falloff.x)*light_falloff.y) : 1);
+				attn = pow(attn, light_falloff.z);
+				light_vector *= 1/l;
+				#ifdef D3D11
+					if (attn == 0) return o;
+				#endif				
+				
+				#if defined(OMNI)
+					#if defined(SHADOW_MAPPING)	&& defined(D3D11)					
+						l = max(max(abs_light_vector.x, abs_light_vector.y), abs_light_vector.z); // + light_vector_to_shadow_map.z;
+						float clip_depth = (l * light_vector_to_shadow_map.x + light_vector_to_shadow_map.y) / l;						
+						attn *= shadow_map_cube.SampleCmpLevelZero(shadow_map_sampler, -light_vector, clip_depth);						
+					#endif			
+				#elif defined(SPOT)
+					float spot_angle = 1-dot(light_vector, -world._m10_m11_m12);					
+					attn *= (spot_angle > light_spot_falloff.x ? 1-saturate((spot_angle-light_spot_falloff.x)*light_spot_falloff.y) : 1);
+					#ifdef D3D11
+						if (attn == 0) return o;
+					#endif
+					
+					#if defined(SHADOW_MAPPING)
+						d -= lerp(0.01, 0.2, saturate(d/50));
+						#if defined(NV_STEREO) && defined(D3D11)		
+							wp = decode_world_pos(input.w, d, stereo);			
+						#else
+							wp = decode_world_pos(input.w, d);
+						#endif
+						float4 ls = mul(float4(wp,1), world_to_shadow_map);	
+						
+						#if defined(D3D11)
+							ls.xyz /= ls.w;
+							float2 sm_resolution;
+							shadow_map.GetDimensions(sm_resolution.x, sm_resolution.y);
+							float2 tscale = float2(1.f / sm_resolution.x, 1.f / sm_resolution.y);
+							half shadow = 0;
+							[unroll]
+							for( float xx = -0.5; xx <= 0.5; xx += 1.0 ) {
+								[unroll]
+								for( float yy = -0.5; yy <= 0.5; yy += 1.0 ) 
+									shadow += shadow_map.SampleCmpLevelZero(shadow_map_sampler, ls.xy + (float2( xx, yy ) * tscale), ls.z);
+							}															
+							attn *= (shadow * 0.25);					
+						#elif defined(GL2)
+							attn *= pcf_shadow_2d(shadow_map, ls);
+						#elif defined(GCM)
+							attn *= pcf_shadow_2d(shadow_map, ls, wpos.xy);
+						#endif
+						//attn *= shadow_map.SampleCmpLevelZero(shadow_map_sampler, ls.xy, ls.z);					
+					#endif			
+				#endif					
+				
+				#if defined(D3D11)
+					if (attn == 0) return o;
+					float4 ta = albedo.Load(int3(input.position.xy, 0));	
+					float4 tn = normal.Load(int3(input.position.xy, 0));
+					float4 tm = mask.Load(int3(input.position.xy, 0));
+				#elif defined(GCM) || defined(X360) || defined(GL2)
+					half4 ta = tex2D(albedo, uv);
+					half4 tn = tex2D(normal, uv);
+					half4 tm = tex2D(mask, uv);
+				#endif
+				
+				half3 n = normalize(gbuffer_decode_normal(tn));				
+				float glossiness = gbuffer_decode_glossiness(tn, MAX_GLOSSINESS);
+				half ao = tm.a;
+				half material_idx = tm.g;				
+				half specular_mask = gbuffer_decode_specular_mask(ta);
+				
+				half diffuse_multiplier = (material_idx == CLOTH_MATERIAL) ? tm.b * 2 : 1.f;
+				half3 specular_col = (material_idx >= COLORED_SPECULAR_MATERIAL) ? half3(tm.gb * tm.gb, specular_mask) : specular_mask.rrr;				
+				
+				half da = dot(n, light_vector);	
+								
+				float a = saturate(da) * attn;				
+				float3 cdif = light_color * saturate(a*diffuse_multiplier);
+				float3 output = cdif * gbuffer_decode_albedo(ta);
+				
+				#ifdef SKIN
+					float s = ks_skin_specular(n, light_vector, view_vector, gbuffer_decode_glossiness(tn, 1), specular_mask);
+					o.specular = float4(cdif * s, 0);
+				#else
+					float3 h = normalize(light_vector + view_vector);				
+					#ifdef USE_TORRANCE_SPARROW						
+						output += a * light_color * torrance_sparrow_blinn_phong(specular_col, h, view_vector, n, glossiness);
+					#else
+						float specular_energy_conservation = (glossiness + 8) / (8 * 3.14159);		
+						float s = specular_energy_conservation * pow(saturate(dot(h,n)), glossiness);
+						//float3 cspec = cdif * s * specular_col;
+						float3 cspec = a * light_color * s * specular_col;
+						output += cspec;
+					#endif					
+				#endif
+				
+				o.base = half4(output, 0);
+				return o;				
+			}	
+		"""
+	}	
+	
+	ao_source = {		
+		includes = [ "common", "gbuffer_access" ]
+		
+		samplers = {
+			ndefined_D3D11 = {				
+				depth = { sampler_states = "clamp_point" }
+			}			
+		}
+		
+		code="""
+			#if defined(GCM) || defined(X360) || defined(GL2)
+				sampler2D depth;
+			#else
+				Texture2D<float4> depth;
+			#endif			
+						
+			struct VS_INPUT {
+				float4 position : POSITION;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 w : TEXCOORD1;
+			};
+			
+			CBUFFER_START(c0)
+				#ifdef SPOT
+					float4x4 world;
+				#endif
+				float4x4 world_view_proj;
+			CBUFFER_END
+			
+			CBUFFER_START(Light)
+				float3 light_position;
+				float3 light_color;
+				float3 light_falloff; // start, 1.f/(end-start), exp				
+				float3 light_proxy_scale;				
+				#ifdef SPOT					
+					float2 light_spot_falloff; // start, 1.f/(end-start)
+				#endif				
+			CBUFFER_END
+			
+			#if defined(NV_STEREO) && defined(D3D11)
+				Texture2D<float4> nv_stereo_params;
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;				
+				o.position = mul(float4(input.position.xyz * light_proxy_scale, 1), world_view_proj);
+				o.w = encode_world_pos(o.position, camera_unprojection);
+				return o;
+			}												
+			
+			half4 ps_main(PS_INPUT input
+				#ifdef GCM
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float2 wpos : VPOS
+				#endif
+				) : SV_TARGET0
+			{					
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					half2 uv = wpos.xy / back_buffer_size;					
+					float d = gbuffer_decode_depth(tex2D(depth, uv));
+				#else
+					float d = gbuffer_decode_depth(depth.Load(int3(input.position.xy, 0)));
+				#endif			
+				
+				#if defined(NV_STEREO) && defined(D3D11)
+					float4 stereo = nv_stereo_params.Load(int3(0,0,0));
+					float3 wp = decode_world_pos(input.w, d, stereo);					
+				#else
+					float3 wp = decode_world_pos(input.w, d);
+				#endif			
+				
+				float3 view_vector = normalize(camera_world._m30_m31_m32 - wp);
+				
+				float3 light_vector = light_position - wp;
+				float3 abs_light_vector = abs(light_vector);
+				float l = length(light_vector) + 0.00001;
+				float attn = (l > light_falloff.x ? 1-saturate((l-light_falloff.x)*light_falloff.y) : 1);
+				attn = pow(attn, light_falloff.z);				
+				
+				return half4(0,0,0, 1-attn);				
+			}	
+		"""
+	}	
+		
+	skin_filter = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			input_texture1 = { sampler_states = "clamp_point" }
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}						
+			
+			#if defined(BLEND)
+				float4 blend_result(PS_INPUT input) {
+					return tex2D(input_texture0, input.uv);
+				}			
+			#else
+				float4 skin_blur(PS_INPUT input, uniform float2 step) : SV_TARGET {
+					// Gaussian weights for the six samples around the current pixel:
+					//   -3 -2 -1 +1 +2 +3
+					float w[6] = { 0.006,   0.061,   0.242,  0.242,  0.061, 0.006 };
+					float o[6] = {  -1.0, -0.6667, -0.3333, 0.3333, 0.6667,   1.0 };
+
+					// Fetch color and linear depth for current pixel:
+					float4 colorM = tex2D(input_texture0, input.uv);
+					float depthM = tex2D(input_texture1, input.uv);
+					
+					// Accumulate center sample, multiplying it with its gaussian weight:
+					float4 colorBlurred = colorM;
+					colorBlurred.rgb *= 0.382;
+
+					// Calculate the step that we will use to fetch the surrounding pixels,
+					// where "step" is:
+					//     step = sssStrength * gaussianWidth * pixelSize * dir
+					// The closer the pixel, the stronger the effect needs to be, hence
+					// the factor 1.0 / depthM.
+					//colorM.a = 1;
+					float2 finalStep = colorM.a * step / depthM;
+					float correction = 1600; //8000;
+
+					// Accumulate the other samples:
+					[unroll]
+					for (int i = 0; i < 6; i++) {
+						// Fetch color and depth for current sample:
+						float2 offset = input.uv + o[i] * finalStep;
+						float3 color = tex2D(input_texture0, offset).rgb;
+						float depth = tex2D(input_texture1, offset).r;
+						
+						// If the difference in depth is huge, we lerp color back to "colorM":
+						float s = min(0.0125 * correction * abs(depthM - depth), 1.0);
+						color = lerp(color, colorM.rgb, s);
+
+						// Accumulate:
+						colorBlurred.rgb += w[i] * color;
+					}
+
+					// The result will be alpha blended with current buffer by using specific
+					// RGB weights. For more details, I refer you to the GPU Pro chapter :)
+					return colorBlurred;
+				}			
+
+				float4 skin_main(PS_INPUT input) {
+					float sss_strength = 12.5; //31.5;
+					float maxdd = 0.001;
+					
+					#ifdef STEP0
+						static float gaussian_width = sqrt((0.0516 - 0.0064));
+					#elif defined(STEP1)
+						static float gaussian_width = sqrt((0.2719 - 0.0516));
+					#elif defined(STEP2)
+						static float gaussian_width = sqrt((2.0062 - 0.2719));
+					#endif
+					
+					#ifdef DIRECTION_X
+						float2 dir = float2(1,0);
+					#else
+						float2 dir = float2(0,1);
+					#endif
+					
+					float2 step = sss_strength * gaussian_width * (float2(1,1) / back_buffer_size.xy) * dir;				
+					
+					float4 c = skin_blur(input, step);
+					
+					return c;
+				}									
+			#endif		
+		
+			#if defined(DIRECTION_X) || (defined(DIRECTION_Y) && !defined(INDEPENDENT_BLEND))
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					return skin_main(input);
+				}
+			#elif defined(BLEND)
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					return blend_result(input);
+				}				
+			#else
+				struct PS_OUTPUT {
+					float4 acc : SV_TARGET0;
+					float4 final : SV_TARGET1;
+				};
+
+				PS_OUTPUT ps_main(PS_INPUT input) {
+					PS_OUTPUT o;
+					float4 c = skin_main(input);
+					o.acc = c;
+					o.final = c;
+					return o;
+				}
+			#endif			
+		"""
+	}	
+	
+	skin_filter_cheap = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }
+			input_texture1 = { sampler_states = "clamp_point" }
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+			sampler2D input_texture1;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(skin_filter_c0)
+				float4x4 world_view_proj;				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				return o;
+			}			
+			
+			#define SAMPLE_COUNT 13
+			
+			float3 blur_jittered_weights[SAMPLE_COUNT] = {
+				{ 0.220441, 0.437000, 0.635000 },
+				{ 0.076356, 0.064487, 0.039097 },
+				{ 0.116515, 0.103222, 0.064912 },
+				{ 0.064844, 0.086388, 0.062272 },
+				{ 0.131798, 0.151695, 0.103676 },
+				{ 0.025690, 0.042728, 0.033003 },
+				{ 0.048593, 0.064740, 0.046131 },
+				{ 0.048092, 0.003042, 0.000400 },
+				{ 0.048845, 0.005406, 0.001222 },
+				{ 0.051322, 0.006034, 0.001420 },
+				{ 0.061428, 0.009152, 0.002511 },
+				{ 0.030936, 0.002862, 0.000652 },
+				{ 0.073580, 0.023239, 0.009703 }
+			};
+			
+			float2 blur_jittered_samples[SAMPLE_COUNT] = {
+				{ 0.000000, 0.000000 },
+				{ 1.633992, 0.036795 },
+				{ 0.177801, 1.717593 },
+				{ -0.194906, 0.091094 },
+				{ -0.239737, -0.220217 },
+				{ -0.003530, -0.118219 },
+				{ 1.320107, -0.181542 },
+				{ 5.970690, 0.0253378 },
+				{ -1.089250, 4.958349 },
+				{ -4.015465, 4.156699 },
+				{ -4.063099, -4.110150 },
+				{ -0.638605, -6.297663 },
+				{ 2.542348, -3.245901 }
+			};			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				float2 pixel_size = 1.f / back_buffer_size;
+				
+				float d = gbuffer_decode_depth(tex2D(input_texture1, input.uv));
+				
+				const float maxdd = 0.001f;
+				const float correction = 800.f;
+				const float sss_strength = 20.f;
+				
+				const float gaussian_width = sqrt(2.0062 - 0.2719);
+
+				float4 middle = tex2D(input_texture0, input.uv);
+
+				float2 step = sss_strength * gaussian_width * pixel_size;
+				middle.a = 1;
+				float2 final_step = middle.a * step / d;
+				
+				float3 accumulated_color = float3(0,0,0);
+				float3 total_weight = float3(0,0,0);
+				
+				#ifndef GCM
+					[unroll]
+				#endif
+				
+				for (int i=0; i < SAMPLE_COUNT; ++i) {
+					float2 pos = input.uv + blur_jittered_samples[i] * final_step;
+					float4 sample = tex2D(input_texture0, pos);
+					float sample_depth = gbuffer_decode_depth(tex2D(input_texture1, pos));					
+					
+					float s = min(0.0125 * correction * abs(d - sample_depth), 1.f);
+					float3 color = lerp(sample, middle.rgb, s);
+					accumulated_color += color * blur_jittered_weights[i];
+					total_weight += blur_jittered_weights[i];
+				}
+				
+				return float4(accumulated_color / total_weight, middle.a);
+			}
+		"""
+	}	
+		
+	global_shadow_mask = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			depth = { sampler_states = "clamp_point" }				
+			
+			defined_D3D11 = {
+				shadow_map_sampler = { sampler_states = "shadow_map" }
+				defined_BILLBOARD_SHADOW_CASTING = {
+					shadow_map_color = { sampler_states = "clamp_linear" }
+				}
+			}
+			ndefined_D3D11 = {
+				shadow_map = { sampler_states = "shadow_map" }	
+			}
+		}
+		
+		code="""
+			sampler2D depth;			
+			
+			#if defined(D3D11)
+				SamplerComparisonState shadow_map_sampler;				
+				Texture2D<float> shadow_map;
+				#ifdef BILLBOARD_SHADOW_CASTING
+					sampler2D shadow_map_color;
+				#endif
+			#elif defined(GL2)
+				sampler2DShadow shadow_map;
+			#else
+				sampler2D shadow_map;
+			#endif			
+			
+			#if defined(D3D11) && defined(NV_STEREO)
+				Texture2D<float4> nv_stereo_params;
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#ifndef FILL
+					float2 uv : TEXCOORD0;
+					float4 w : TEXCOORD1;
+				#endif
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				
+				#ifdef FILL
+					float shadow_fallback_intensity; // exports={ name="Shadow Intensity Fallback" type="scalar" value=1 min=0 max=1 step=0.003 }
+				#else
+					float4x4 world_to_shadow_map;
+				#endif
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				#ifndef FILL
+					o.uv = input.uv;
+					o.w = encode_world_pos(o.position, camera_unprojection);
+				#endif
+				
+				return o;
+			}
+			
+			#ifdef X360
+				half shadow_intensity(float4 sm_pos) {
+					// Fetch the bilinear filter fractions and four samples from the depth texture. The LOD for the 
+					// fetches from the depth texture is computed using aniso filtering so that it is based on the 
+					// minimum of the x and y gradients (instead of the maximum).  
+					float4 Weights;
+					float LOD;
+					float4 SampledDepth;
+					asm {
+						getCompTexLOD2D LOD.x, sm_pos.xy, shadow_map, AnisoFilter=max16to1
+						setTexLOD LOD.x
+
+						tfetch2D SampledDepth.x___, sm_pos.xy, shadow_map, OffsetX = -0.5, OffsetY = -0.5, UseComputedLOD=false, UseRegisterLOD=true
+						tfetch2D SampledDepth._x__, sm_pos.xy, shadow_map, OffsetX =  0.5, OffsetY = -0.5, UseComputedLOD=false, UseRegisterLOD=true
+						tfetch2D SampledDepth.__x_, sm_pos.xy, shadow_map, OffsetX = -0.5, OffsetY =  0.5, UseComputedLOD=false, UseRegisterLOD=true
+						tfetch2D SampledDepth.___x, sm_pos.xy, shadow_map, OffsetX =  0.5, OffsetY =  0.5, UseComputedLOD=false, UseRegisterLOD=true
+
+						getWeights2D Weights, sm_pos.xy, shadow_map, MagFilter=linear, MinFilter=linear, UseComputedLOD=false, UseRegisterLOD=true
+					};
+
+					Weights = float4( (1-Weights.x)*(1-Weights.y), Weights.x*(1-Weights.y), (1-Weights.x)*Weights.y, Weights.x*Weights.y );
+						
+					float4 Attenuation = step( sm_pos.z, SampledDepth );
+					return dot( Attenuation, Weights );
+				}
+			#elif defined(GL2)
+				half shadow_intensity(float4 sm_pos) {
+					float3 tscale = float3(1.f / 1024.f, 1.f / 1024.f, 0);
+					half shadow = 0;
+					sm_pos.z = sm_pos.z*0.5 + 0.5;
+					
+					shadow += tex2D(shadow_map, sm_pos + float3(-0.5, -0.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, sm_pos + float3(-0.5, -1.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, sm_pos + float3(-1.5, -0.5, 0)*tscale).r;
+					shadow += tex2D(shadow_map, sm_pos + float3(-1.5, -1.5, 0)*tscale).r;
+					
+					return shadow * 0.25;
+				}
+			#else
+				half shadow_intensity(float4 sm_pos) {
+					float2 sm_resolution;
+					#ifdef D3D11
+						shadow_map.GetDimensions(sm_resolution.x, sm_resolution.y);
+					#else
+						sm_resolution = float2(1024, 1024);
+					#endif
+					float4 tscale = float4(1.f / sm_resolution.x, 1.f / sm_resolution.y, 0.f, 0.f);
+
+					half a = 0;		
+					half op_a = 0;
+					for( float xx = -0.5; xx <= 0.5; xx += 1.0 ) {
+						for( float yy = -0.5; yy <= 0.5; yy += 1.0 ) {						
+							#ifdef D3D11
+								float2 uv = sm_pos.xy + float2( xx, yy ) * tscale.xy;
+								#if defined(BILLBOARD_SHADOW_CASTING)
+									op_a += tex2D(shadow_map_color, uv).r;
+									a += 1-shadow_map.SampleCmpLevelZero(shadow_map_sampler, uv, sm_pos.z);
+								#else
+									a += shadow_map.SampleCmpLevelZero(shadow_map_sampler, uv, sm_pos.z);
+								#endif
+							#else
+								a += tex2Dproj(shadow_map, sm_pos + (float4( xx, yy, 0,0) * tscale));
+							#endif
+						}
+					}
+					
+					#ifdef GCM
+						return 1-(a * 0.25);
+					#else
+						#if defined(BILLBOARD_SHADOW_CASTING)
+							return saturate(1-(a+op_a)*0.25);
+						#else
+							return a * 0.25;
+						#endif
+					#endif
+					
+				}
+			#endif
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 {	
+				#ifdef FILL
+					return half4(1,1,1,1);
+					//return half4(shadow_fallback_intensity,shadow_fallback_intensity,shadow_fallback_intensity,1);
+				#else
+					float d = gbuffer_decode_depth(tex2D(depth, input.uv));					
+					d -= lerp(0.0025*2, 0.2, saturate(d/50));
+					
+					#if defined(NV_STEREO) && defined(D3D11)
+						float4 stereo = nv_stereo_params.Load(int3(0,0,0));
+						float3 wp = decode_world_pos(input.w, d, stereo);					
+					#else
+						float3 wp = decode_world_pos(input.w, d);
+					#endif					
+					
+					float4 sm_pos = mul(float4(wp, 1), world_to_shadow_map);
+					half shadow = shadow_intensity(sm_pos);
+					return half4(shadow, shadow, shadow, 1);				
+				#endif
+			}	
+		"""
+	}
+	
+	shadow_cutter = {		
+		includes = [ "common", "gbuffer_access" ]
+		  
+		code="""						
+			struct VS_INPUT {
+				float4 position : POSITION;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				
+				float4x4 box_wtm;
+				float3 box_scale;
+				float3 box_translation;				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 p = input.position;
+				p.xyz *= float3(2,1,2);
+				p.xyz = p.xyz * box_scale; // + box_translation;			
+				o.position = mul(mul(p, box_wtm), world_view_proj);
+				return o;
+			}			
+			
+			#ifndef X360
+				half4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					return half4(1,0,0,0.5);				
+				}
+			#endif
+		"""
+	}	
+	
+	debug_render_voxels = {
+		includes = [ "common" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }	
+		}
+		 
+		code="""
+			sampler3D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float3 ray_dest : TEXCOORD1;
+				float3 ray_origin : TEXCOORD2;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float slice; // exports={ name="Slice" type="scalar" value=0 min=0 max=256 step=1 }
+				float4x4 world_view_proj;
+				float3 sun_direction;
+				float3 sun_color;
+				
+			CBUFFER_END
+			
+			static const float3 min_scene = float3(-25.6,-25.6,-25.6);
+			static const float3 max_scene = float3(25.6,25.6,25.6);
+			#define VOXEL_RES 256
+
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				
+				float3 p = float3(float2(input.uv.x, 1-input.uv.y) * 2 - 1, 0) * camera_unprojection.xzy;
+				float n = camera_near_far.x;
+				float f = camera_near_far.y;
+				
+				float3 scene_size = (max_scene - min_scene);
+				float3 texel_size = (scene_size / VOXEL_RES) * 32;
+				float3 voxel_origo = camera_world._m30_m31_m32 + camera_world._m10_m11_m12 * 0.15 * scene_size;				
+				
+				voxel_origo -= fmod(voxel_origo, texel_size); //frac(voxel_origo / texel_size) * texel_size;
+				//opos += fmod(opos, texel_size);
+				
+				float3 origin = mul(float4(p.x * n, n, p.y * n, 1), camera_inv_view).xyz;				
+				float3 dest = mul(float4(p.x * (n+f), (n+f) , p.y * (n+f), 1), camera_inv_view).xyz;
+				origin -= voxel_origo;
+				dest -= voxel_origo;
+				
+				//origin -= fmod(origin, (max_scene-min_scene)/256.f);
+				//dest -= fmod(dest, (max_scene-min_scene)/256.f);
+				float3 s = 2.f / (max_scene - min_scene);
+				origin *= s;
+				dest *= s;
+								
+				//origin += frac(origin*256)/256.f;
+				//dest += frac(dest*256)/256.f;
+				
+				o.ray_origin = origin;
+				o.ray_dest = dest;
+				
+				return o;
+			}			
+			
+			float4 voxel_cone_trace(float3 origin, float3 dir, float cone_ratio, float max_distance) {
+				origin = saturate(origin * 0.5 + 0.5);
+				origin.y = 1 - origin.y;
+				dir.y *= -1;
+				
+				float min_diameter = 1.f/512.f;
+				float dist = min_diameter;
+				float4 c = 0;
+				while(dist < max_distance && c.r < 1.0){
+					float sample_diameter = max(min_diameter, cone_ratio * dist);
+					float sample_lod= log2(sample_diameter * VOXEL_RES);	
+					float3 sample_pos = origin + dir * dist;
+					float4 tap = tex3Dlod(input_texture0, float4(sample_pos, sample_lod));
+					
+					float weight = 1.f; //tap.w;
+					c += tap * weight;
+					//c += tap; // float4(tap.rgb * tap.w, tap.w);
+					
+					dist += sample_diameter;
+				}
+				
+				return float4(saturate(dist / max_distance), 0, 0, 0);
+			}
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {		
+				float3 dir = normalize(input.ray_dest - input.ray_origin);
+				float4 c = voxel_cone_trace(input.ray_origin, dir, 0.01, 1.0);				
+				return c;
+				
+				//return c;
+				float3 n = normalize(decode_signed_normal(c.rgb));
+				return float4(encode_signed_normal(n), 1);
+				
+			}	
+		"""
+	}	
+
+	ao_cone_trace = {
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear_mip_point" }
+			normal = { sampler_states = "clamp_point" }	
+			depth = { sampler_states = "clamp_point" }				
+		}
+			
+		code="""
+			sampler3D input_texture0;
+			sampler2D normal;
+			sampler2D depth;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float4 w : TEXCOORD1;
+				float3 voxel_origo : TEXCOORD2;
+			};			 			
+			
+			CBUFFER_START(c0)				
+				float4x4 world_view_proj;
+				float3 sun_direction;
+				float3 sun_color;				
+			CBUFFER_END
+			
+			static const float3 min_scene = float3(-25.6,-25.6,-25.6);
+			static const float3 max_scene = float3(25.6,25.6,25.6);
+			//static const float3 min_scene = float3(-128,-128,-128);
+			//static const float3 max_scene = float3(128,128,128);
+			
+			#define VOXEL_RES 256.f
+
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				o.w = encode_world_pos(o.position, camera_unprojection);	
+				
+				float3 scene_size = (max_scene - min_scene);
+				float3 texel_size = (scene_size / VOXEL_RES) * 32;	
+				float3 voxel_origo = camera_world._m30_m31_m32 + camera_world._m10_m11_m12 * 0.15 * scene_size;
+								
+				o.voxel_origo = voxel_origo - fmod(voxel_origo, texel_size); 
+				
+				return o;
+			}						
+			
+			float4 voxel_cone_trace(float3 origin, float3 dir, float cone_ratio, float max_distance) {
+				origin = saturate(origin * 0.5 + 0.5);
+				origin.y = 1 - origin.y;
+				dir.y *= -1;				
+				
+				float min_diameter = 1.f/VOXEL_RES;
+				float dist = min_diameter*3;
+				
+				float border = 32.f / VOXEL_RES;				
+				float3 intersection = (origin >= border) * (origin < (1-border));
+				if (dot(intersection, intersection) != 3)
+					return float4(0,0,0,0);
+					
+				//weight *= (dot(intersection, intersection) == 3);
+				
+				float4 c = 0;
+				float weight = 1;
+				while(dist < max_distance && c.r < 1.0){
+					float sample_diameter = max(min_diameter, cone_ratio * dist);
+					float sample_lod= min(log2(sample_diameter * VOXEL_RES),5);
+					float3 sample_pos = origin + dir * dist;
+										
+					float4 tap = tex3Dlod(input_texture0, float4(sample_pos, sample_lod));
+					
+					float weight = 1; //1/(1+dist*dist); //1/(1+2*dist); 
+					//float3 intersection = (sample_pos >= border) * (sample_pos < (1-border));
+					//weight *= (dot(intersection, intersection) == 3);					
+					
+					c += tap * weight;					
+					
+					dist += sample_diameter;
+				}				
+				
+				return saturate(c);
+			}
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {		
+				half4 normal_glossiness = tex2D(normal, input.uv);
+				
+				half3 wn = normalize(gbuffer_decode_normal(normal_glossiness));
+				half glossiness = gbuffer_decode_glossiness(normal_glossiness, MAX_GLOSSINESS);
+				
+				float d = gbuffer_decode_depth(tex2D(depth, input.uv));				
+				
+				float3 wp = decode_world_pos(input.w, d) - input.voxel_origo;
+				float3 s = 2.f / (max_scene - min_scene);
+				float3 voxel_origin = (wp + wn * 0.01) * s;
+				
+				static float3 world_right = float3(1,0,0);
+				static float3 world_up = float3(0,0,1);
+				static float3 world_forward = float3(0,1,0);
+				float3 right, up;
+				
+				if (abs(dot(wn, world_right)) < 0.9) {
+					up = cross(wn, world_right);
+					right = cross(wn, up);
+				} else if (abs(dot(wn, world_up)) < 0.9) {
+					right = cross(wn, world_up);
+					up = cross(wn, right);
+				} else {
+					right = cross(wn, world_forward);
+					up = cross(wn, right);	
+				}
+				right = normalize(right) * 1.73333;
+				up = normalize(up) * 1.73333;
+				
+				float3 wn1 = normalize(wn + right);
+				float3 wn2 = normalize(wn - right);
+				float3 wn3 = normalize(wn + up);
+				float3 wn4 = normalize(wn - up);
+				float sub_cone_weights = dot(wn, wn1);
+				
+				static const float cone_ratio = 1.3333;
+				///float cone_ratio = 0.5 + (sin(time) * 0.5 + 0.5);
+				static const float max_trace_distance = 0.35;
+				
+				float4 c = voxel_cone_trace(voxel_origin, wn, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn1, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn2, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn3, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn4, cone_ratio, max_trace_distance);
+				c.r = 1 - ((c.r/(sub_cone_weights*4+1))*0.9);
+								
+				//c = voxel_cone_trace(voxel_origin, -sun_direction, 0.05, 0.8);
+				//c.a = 1-c.a;
+				
+				
+				return float4(c.r,c.r,c.r,c.r);
+				
+				/*
+				
+				float3 dir = normalize(input.ray_dest - input.ray_origin);
+				float4 c = voxel_cone_trace(input.ray_origin, dir, 0.01, 1.0);
+				//return c;
+				float3 n = normalize(decode_signed_normal(c.rgb));
+				return float4(encode_signed_normal(n), 1);
+				*/
+			}	
+		"""
+	}		
+	
+	gbuffer_debug = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }	
+		}
+		 
+		code="""
+			sampler2D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+				float2 inv_input_texture0_size;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				
+				o.position = mul(input.position, world_view_proj);				
+				#ifdef FILL_UNTOUCHED_PIXELS
+					o.position.z = o.position.w;
+				#endif
+				o.uv = input.uv;
+				
+				return o;
+			}
+			
+			#ifdef LUMINANCE
+				static const half3 luminance_vector = half3(0.2127, 0.7152, 0.0721);
+			#endif
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#ifdef FILL_UNTOUCHED_PIXELS
+					return float4(0, 0, 0, 0);
+				#endif
+				
+				#ifdef FILL_ALBEDO
+					return float4(0.5, 0.5, 0.5, 0);
+				#endif				
+				float4 c = tex2D(input_texture0, input.uv);
+				
+				#ifdef ALPHA_TO_RGB
+					c.rgb = c.aaa;
+				#endif
+				
+				#ifdef LUMINANCE
+					float l = dot(c.rgb, luminance_vector);				
+					c.rgb = float3(l,l,l);
+				#endif
+				
+				#if defined(SHADOW_MASK) || defined(AMBIENT_OCCLUSION)
+					c.bga = float3(0, 0, 1);					
+				#elif defined(APPLY_DEBUG_OVERLAY)
+					if (c.a < 1)
+						discard;
+				#endif
+				
+				return c;
+			}	
+		"""
+	}	
+	
+	
+	linearize_depth	= {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			input_texture0 = { sampler_states = "clamp_point" }
+		}
+		  
+		code="""
+			sampler2D input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+			CBUFFER_END			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;				
+				return o;
+			}									
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#ifdef GCM
+					float clip_depth = texDepth2D(input_texture0, input.uv);
+				#else
+					float clip_depth = tex2D(input_texture0, input.uv).r;
+				#endif				
+				float d = linearize_depth(clip_depth);				
+				return float4(d,0,0,0);				
+			}	
+		"""
+	}	
+
+	
+	beckmann_distribution_lut = {
+		includes = [ "common", "gbuffer_access" ]
+		  
+		code="""
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;				
+			CBUFFER_END			
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;				
+				return o;
+			}
+			
+			// From GPU Gems 3
+			float beckmann(float ndoth, float m) {  
+				float alpha = acos( ndoth );  
+				float ta = tan( alpha );  
+				float val = 1.0/(m*m*pow(ndoth,4.0))*exp(-(ta*ta)/(m*m));  
+				return val;  
+			}  
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				// Scale the value to fit within [0,1] – invert upon lookup.  
+				return 0.5 * pow(beckmann(input.uv.x, 1-input.uv.y ), 0.1);
+			}	
+		"""
+	}
+		
+	volume_light = {		
+		includes = [ "common", "gbuffer_access" ]
+		
+		samplers = {			
+			defined_SHADOW_MAPPING = {
+				shadow_map_sampler = { sampler_states = "shadow_map" }	
+				shadow_map_cube = { sampler_states = "clamp_point" }	
+			}			
+		}
+		
+		code="""
+			Texture2D<float> depth;
+			#if defined(SHADOW_MAPPING)				
+				SamplerComparisonState shadow_map_sampler;				
+				#if defined(OMNI)
+					TextureCube<float> shadow_map_cube;
+				#elif defined(SPOT)
+					Texture2D<float> shadow_map;
+				#endif
+			#endif
+						
+			struct VS_INPUT {
+				float4 position : POSITION;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				float4 w : TEXCOORD1;
+				float3 wp : TEXCOORD2;
+			};
+			
+			CBUFFER_START(c0)
+				float4x4 world;
+				float4x4 view_proj;				
+			CBUFFER_END
+			
+			CBUFFER_START(Light)
+				float3 light_position;
+				float3 light_color;
+				float light_falloff_end;
+				float3 light_proxy_scale;
+				#ifdef SPOT					
+					float light_spot_angle_end;
+					#if defined(SHADOW_MAPPING)
+						float4x4 world_to_shadow_map;
+					#endif
+				#endif				
+				#if defined(OMNI)
+					#if defined(SHADOW_MAPPING)
+						float3 light_vector_to_shadow_map;
+					#endif
+				#endif
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float3 wp = mul(float4(input.position.xyz * light_proxy_scale, 1), world);
+				o.position = mul(float4(wp, 1), view_proj);				
+				o.wp = wp.xyz;
+				o.w = encode_world_pos(o.position, camera_unprojection);				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {		
+				//return float4(1,0,0,0);
+
+				float d = depth.Load(int3(input.position.xy, 0));				
+				float3 wp = decode_world_pos(input.w, gbuffer_decode_depth(d));	
+				float camera_to_intersection = length(camera_pos - wp);
+				float camera_to_end_light = length(camera_pos - input.wp);
+				
+				int n_steps = 100;
+				n_steps *= camera_to_intersection < camera_to_end_light ? saturate(camera_to_intersection / camera_to_end_light) : 1;
+				float3 end = camera_to_intersection < camera_to_end_light ? wp : input.wp;
+				
+				float a = 0;
+				float normalizer = 1.f / (float)n_steps;
+				[unroll]
+				for (int i = 0; i < n_steps; ++i) {
+					float3 pos = lerp(camera_pos, end, (float)i / (float)n_steps);
+					
+					float3 light_vector = light_position - pos;					
+					float l = length(light_vector) + 0.00001;
+					float attn = 1 - saturate(l / light_falloff_end);
+					light_vector *= 1 / l;
+					float spot_angle = 1-dot(light_vector, -world._m10_m11_m12);
+					attn *= 1-saturate(spot_angle / light_spot_angle_end);										
+					
+					float4 ls = mul(float4(pos,1), world_to_shadow_map);
+					ls.xyz /= ls.w;				
+					a += attn * shadow_map.SampleCmpLevelZero(shadow_map_sampler, ls.xy, ls.z) * normalizer;
+				}
+				
+				a *= 0.04;
+				
+				return float4(light_color * a, 0);				
+			}	
+		"""
+	}	
+	
+	ao_integrator = {		
+		includes = [ "common", "gbuffer_access" ]
+		/*samplers = {
+			input_texture0 = { sampler_states = "clamp_linear" }	
+		}
+		 */
+		code="""
+			//sampler2D input_texture0;
+			
+			Texture2D<float4> input_texture0;
+						
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float2 uv : TEXCOORD0;				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				#ifdef SUN_OCCLUSION
+					float3 hc_sun_direction : TEXCOORD1;
+				#endif
+			};
+			
+			CBUFFER_START(c0)
+				float4x4 world_view_proj;
+				float3 sun_direction;
+				float4x4 patch_view;
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				o.position = mul(input.position, world_view_proj);				
+				o.uv = input.uv;
+				#ifdef SUN_OCCLUSION
+					o.hc_sun_direction = mul(normalize(sun_direction), (float3x3)patch_view);
+				#endif
+				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				static const int num_samples = 12;
+				static const int2 offsets[num_samples] = {
+							   int2(1,0), int2(2,0),
+					int2(0,1), int2(1,1), int2(2,1), int2(3,1),
+					int2(0,2), int2(1,2), int2(2,2), int2(3,2),
+					           int2(1,3), int2(2,3)
+				};				
+				
+				float4 ao = 0;
+				for (int i=0; i<num_samples; ++i) {
+					ao += input_texture0.Load(int3(offsets[i], 6));
+				}
+				ao /= num_samples;
+
+				#ifdef SUN_OCCLUSION								
+					const static float r = 0.05235;
+					const static float pi = 3.1415926;				
+					//float disc_normalizer = 1.f / (pi*(r*r)) / (4*pi);					
+					float disc_normalizer = 1.f / (pi*(r*r)) / (2*pi);					
+					float sun_occlusion = ao.y * disc_normalizer;
+					
+					return float4(sun_occlusion, sun_occlusion, ao.x, ao.x);
+				#else
+					return ao.xxxx;
+				#endif
+			}	
+		"""
+	}
+
+	mobile_light = {
+		includes = [ "common", "gbuffer_access" ]	
+		
+		samplers = {
+			depth = { sampler_states = "clamp_point" }
+		}
+		
+		vp_code = """ 
+			precision mediump float;
+			
+			uniform mat4 world;
+			uniform mat4 view;
+			uniform mat4 proj;
+			
+			attribute vec3 position0;
+			
+			#ifdef DIFFUSE_MAP
+				attribute vec2 texcoord0;
+				varying vec2 diffuse_uv;
+			#endif
+			
+			void main() {
+				highp mat4 v = view;
+				highp vec4 wp = vec4(position0.x, position0.y, position0.z, 1.0) * world;
+			  
+				#ifdef CAMERA_LOCK_XY
+					v[0][3] = 0.0;
+					v[1][3] = 0.0;
+					#ifdef CAMERA_LOCK_Z
+						v[2][3] = 0.0;
+					#endif
+				#endif
+			   
+				wp = wp * v * proj;
+				#ifdef PROJECT_TO_FAR_PLANE
+					wp.z = wp.w;
+				#endif
+				#ifdef DIFFUSE_MAP
+					diffuse_uv = texcoord0;
+				#endif
+				gl_Position = wp;				
+			}
+		"""
+		
+		fp_code = """
+			precision mediump float;
+			uniform sampler2D diffuse_map;
+			
+			#ifdef DIFFUSE_MAP
+				varying vec2 diffuse_uv;
+			#endif
+			
+			void main() {
+				#ifdef DIFFUSE_MAP				
+					vec4 col = texture2D(diffuse_map, diffuse_uv);
+				#else
+					vec4 col = vec4(0.5, 0.5, 0.5, 1);
+				#endif
+				
+				gl_FragColor = col;
+			}
+		"""
+		
+		code = """			
+			struct VS_INPUT {
+				float4 position : POSITION;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 w : TEXCOORD0;
+			};
+			
+			CBUFFER_START(c0)
+				#ifdef SPOT
+					float4x4 world;
+				#endif
+				float4x4 world_view_proj;
+			CBUFFER_END
+			
+			CBUFFER_START(Light)
+				float3 light_position;
+				float3 light_color;
+				float3 light_falloff; // start, 1.f/(end-start), exp				
+				float3 light_proxy_scale;				
+				#ifdef SPOT					
+					float2 light_spot_falloff; // start, 1.f/(end-start)
+					#if defined(SHADOW_MAPPING)
+						float4x4 world_to_shadow_map;
+					#endif
+				#endif				
+				#if defined(OMNI)
+					#if defined(SHADOW_MAPPING)
+						float3 light_vector_to_shadow_map;
+					#endif
+				#endif
+			CBUFFER_END
+
+			Texture2D<float4> depth;
+
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;				
+				o.position = mul(float4(input.position.xyz * light_proxy_scale, 1), world_view_proj);				
+				o.w = encode_world_pos(o.position, camera_unprojection);				
+				return o;
+			}			
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				half4 c = half4(light_color,1);
+				
+				float d = gbuffer_decode_depth(depth.Load(int3(input.position.xy, 0)));
+				float3 wp = decode_world_pos(input.w, d);
+				
+				float3 light_vector = light_position - wp;				
+				float l = length(light_vector) + 0.00001;
+				float attn = (l > light_falloff.x ? 1-saturate((l-light_falloff.x)*light_falloff.y) : 1);
+								
+				return c * attn;
+				
+			}	
+		"""
+	}	
+}
+
+
+shaders = {
+	global_lighting = {		 
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {				
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="global_lighting" render_states="global_lighting" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	skin_filter = {
+		editor_advanced_mode = true		
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="OES2"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="skin_filter" render_states="skin_filter" }					
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="INDEPENDENT_BLEND" render_caps={ feature_level="DX11_0" } platforms="D3D11" }
+				{ defines="INDEPENDENT_BLEND DX10_1" render_caps={ feature_level="DX10_1" } platforms="D3D11" }
+				{ defines="SEPARATE_BLEND" platforms="D3D11" }
+			]
+		} 
+	}	
+	
+	skin_filter_cheap = {
+		editor_advanced_mode = true		
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="skin_filter_cheap" render_states="skin_filter_cheap" }					
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}		
+
+	global_shadow_mask = {		 
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="global_shadow_mask" render_states="global_shadow_mask" }
+					]
+				}]				
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="NV_STEREO" render_caps={ nv_stereo=true } platforms="D3D11" }
+				{ defines="BILLBOARD_SHADOW_CASTING" render_settings = { particles_cast_shadows = true } platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	shadow_cutter = {		 
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="shadow_cutter" render_states="shadow_cutter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+	
+	debug_render_voxels = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="debug_render_voxels" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="" platforms = "D3D11"}
+			]
+		} 
+	}	
+	
+	ao_cone_trace = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="ao_cone_trace" render_states="ao_cone_trace" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="" platforms = "D3D11"}
+			]
+		} 
+	}	
+
+	gbuffer_debug = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="gbuffer_debug" render_states="gbuffer_debug" }
+					]					
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+			
+	beckmann_distribution_lut = {
+		editor_advanced_mode = true		
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="beckmann_distribution_lut" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 		
+	}
+	
+	ao_source = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {			
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="ao_sources" hlsl_shader="ao_source" defines="OMNI" render_states="ao_source" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="NV_STEREO" render_caps={ nv_stereo=true } platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+	
+	omni_light = {		 
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ hlsl_shader="light_source" defines="OMNI" render_states="light" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="NV_STEREO" render_caps={ nv_stereo=true } platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+
+	spot_light = {		 
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"				
+				passes = [{
+					defined="MOBILE"
+					pass = [
+					]
+					fail = [{
+						defined="SHADOW_MAPPING"
+						pass = [
+							{ hlsl_shader="light_source" defines="SPOT" render_states="light" }
+							//{ hlsl_shader="volume_light" defines="SPOT" render_states="volume_light" }
+						]
+						fail = [
+							{ hlsl_shader="light_source" defines="SPOT" render_states="light" }
+						]
+					}]
+				}]	
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="NV_STEREO" render_caps={ nv_stereo=true } platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}	
+		
+	linearize_depth = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+					]
+					fail = [
+						{ hlsl_shader="linearize_depth" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"}
+			]
+		} 
+	}
+	
+	ao_integrator = {
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {		
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [				
+						{ hlsl_shader="ao_integrator" render_states="filter" }
+					]
+				}]
+			}
+		}	
+		
+		compile = {
+			default = [
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+				{ defines="" platforms = "D3D11 GCM X360"}
+			]
+		} 
+	}	
+	
+	mobile_light = {		
+		editor_advanced_mode = true
+		
+		contexts = {
+			default = {
+				passes_sort_mode="immediate"				
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						{ hlsl_shader="mobile_light" render_states="mobile_light" }
+					]
+					fail = [
+					
+					]
+				}]
+			}			
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+			]
+		} 
+	} 		
+} 
+
+static_compile= [ 	
+	{ shader="global_lighting" defines="" }	
+	{ shader="global_lighting" defines="SKIN" }	
+	{ shader="global_shadow_mask" }		
+	{ shader="global_shadow_mask" defines="FILL" }	
+	{ shader="shadow_cutter"}	
+	{ shader="debug_render_voxels" platforms="D3D11" }
+	{ shader="ao_cone_trace" platforms="D3D11" }
+	{ shader="omni_light" defines="" }	
+	{ shader="spot_light" defines="" }		
+	{ shader="omni_light" defines="SHADOW_MAPPING" }	
+	{ shader="spot_light" defines="SHADOW_MAPPING" }		
+	{ shader="omni_light" defines="SKIN" }	
+	{ shader="spot_light" defines="SKIN" }		
+	{ shader="omni_light" defines="SKIN SHADOW_MAPPING" }	
+	{ shader="spot_light" defines="SKIN SHADOW_MAPPING" }	
+	{ shader="linearize_depth" }
+		
+	{ shader="gbuffer_debug" }
+	{ shader="gbuffer_debug" defines="ALPHA_TO_RGB" }
+	{ shader="gbuffer_debug" defines="FILL_ALBEDO" }
+	{ shader="gbuffer_debug" defines="LUMINANCE" }
+	{ shader="gbuffer_debug" defines="SHADOW_MASK" }
+	{ shader="gbuffer_debug" defines="AMBIENT_OCCLUSION" }
+	{ shader="gbuffer_debug" defines="APPLY_DEBUG_OVERLAY" }
+	{ shader="gbuffer_debug" defines="FILL_UNTOUCHED_PIXELS" }
+	
+	{ shader="skin_filter" defines="DIRECTION_X STEP0" }
+	{ shader="skin_filter" defines="DIRECTION_Y STEP0" }	
+	{ shader="skin_filter" defines="DIRECTION_X STEP1" }
+	{ shader="skin_filter" defines="DIRECTION_Y STEP1" }
+	{ shader="skin_filter" defines="DIRECTION_X STEP2" }
+	{ shader="skin_filter" defines="DIRECTION_Y STEP2" }
+	{ shader="skin_filter" defines="BLEND STEP0" }
+	{ shader="skin_filter" defines="BLEND STEP1" }
+	{ shader="skin_filter" defines="BLEND STEP2" }
+	
+	{ shader="skin_filter_cheap" }
+	
+	{ shader="beckmann_distribution_lut" }
+	{ shader="ao_integrator" platforms="D3D11" }
+	{ shader="ao_integrator" defines="SUN_OCCLUSION" platforms="D3D11" }
+	{ shader="ao_source" }
+	{ shader="mobile_light" defines="OMNI" platforms="D3D11" }
+	{ shader="mobile_light" defines="SPOT" platforms="D3D11" }	
+	{ shader="mobile_light" defines="OMNI SHADOW_MAPPING" platforms="D3D11" }
+	{ shader="mobile_light" defines="SPOT SHADOW_MAPPING" platforms="D3D11" }	
+]

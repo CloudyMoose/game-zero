@@ -1,0 +1,171 @@
+// in this context include refers to another shader file
+includes = [ "core/rendering/common.shader_source" ] 
+
+render_states = {
+	filter = {
+		inherits = "default"
+		states = {
+			z_write_enable = "false"
+			z_enable = "false"
+		}
+	}
+}
+
+sampler_states = {
+	clamp_linear_mip_point = {
+		inherits="clamp"
+		states = { 
+			filter = "min_mag_linear_mip_point"
+		}	
+	}
+}
+
+hlsl_shaders = {	
+	ao_sun_bake_stream_out = { 
+		includes = [ "common" ]		
+		
+		stream_out = [			
+			{ semantic_name = "TEXCOORD" semantic_index = 0 start_component = 0 component_count = 4 output_slot = 0 }
+		]
+		
+		samplers = {
+			voxels = { sampler_states = "clamp_linear_mip_point" }
+		}	
+		
+		code="""
+			sampler3D voxels;
+			
+			static const float3 min_scene = float3(-25.6,-25.6,-25.6);
+			static const float3 max_scene = float3(25.6,25.6,25.6);			
+			#define VOXEL_RES 256.f			
+			
+			float4 voxel_cone_trace(float3 origin, float3 dir, float cone_ratio, float max_distance) {
+				origin = saturate(origin * 0.5 + 0.5);
+				origin.y = 1 - origin.y;
+				dir.y *= -1;				
+				
+				float min_diameter = 1.f/VOXEL_RES;
+				float dist = min_diameter*3;
+				
+				float border = 32.f / VOXEL_RES;				
+				float3 intersection = (origin >= border) * (origin < (1-border));
+				if (dot(intersection, intersection) != 3)
+					return float4(0,0,0,0);
+					
+				//weight *= (dot(intersection, intersection) == 3);
+				
+				float4 c = 0;
+				float weight = 1;
+				while(dist < max_distance && c.r < 1.0){
+					float sample_diameter = max(min_diameter, cone_ratio * dist);
+					float sample_lod= min(log2(sample_diameter * VOXEL_RES),9);
+					float3 sample_pos = origin + dir * dist;
+										
+					float4 tap = tex3Dlod(voxels, float4(sample_pos, sample_lod));
+					
+					float weight = 1; //1/(1+dist*dist); //1/(1+2*dist); 
+					//float3 intersection = (sample_pos >= border) * (sample_pos < (1-border));
+					//weight *= (dot(intersection, intersection) == 3);					
+					
+					c += tap * weight;					
+					
+					dist += sample_diameter;
+				}				
+				
+				return saturate(c);
+			}
+						
+			struct VS_INPUT {
+				float3 position : POSITION;
+				float3 normal : NORMAL;
+			};
+			
+			struct VS_OUTPUT {
+				float4 color : TEXCOORD0;
+			};			
+			
+			CBUFFER_START(c0)
+				float3 voxel_origo;
+				float3 sun_direction;
+			CBUFFER_END
+			
+			VS_OUTPUT vs_main(VS_INPUT input) {
+				VS_OUTPUT o;				
+				
+				float3 scene_size = (max_scene - min_scene);
+				float3 texel_size = (scene_size / VOXEL_RES) * 32;								
+				voxel_origo -= fmod(voxel_origo, texel_size); 				
+				
+				float3 wp = input.position - voxel_origo;
+				float3 wn = input.normal;
+				
+				float3 s = 2.f / (max_scene - min_scene);
+				float3 voxel_origin = (wp + wn * 0.01) * s;
+				
+				static float3 world_right = float3(1,0,0);
+				static float3 world_up = float3(0,0,1);
+				static float3 world_forward = float3(0,1,0);
+				float3 right, up;
+				
+				if (abs(dot(wn, world_right)) < 0.9) {
+					up = cross(wn, world_right);
+					right = cross(wn, up);
+				} else if (abs(dot(wn, world_up)) < 0.9) {
+					right = cross(wn, world_up);
+					up = cross(wn, right);
+				} else {
+					right = cross(wn, world_forward);
+					up = cross(wn, right);	
+				}
+				right = normalize(right) * 1.73333;
+				up = normalize(up) * 1.73333;
+				
+				float3 wn1 = normalize(wn + right);
+				float3 wn2 = normalize(wn - right);
+				float3 wn3 = normalize(wn + up);
+				float3 wn4 = normalize(wn - up);
+				float sub_cone_weights = dot(wn, wn1);
+				
+				static const float cone_ratio = 1.3333;
+				static const float max_trace_distance = 0.35;
+				
+				float4 c = voxel_cone_trace(voxel_origin, wn, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn1, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn2, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn3, cone_ratio, max_trace_distance);
+				c += sub_cone_weights * voxel_cone_trace(voxel_origin, wn4, cone_ratio, max_trace_distance);
+				c.gba = 1 - ((c.r/(sub_cone_weights*4+1))*0.9);				
+				
+				c.r = 1-voxel_cone_trace(voxel_origin, -sun_direction, 0.2, 0.8);
+				
+				o.color = c;
+				
+				return o;
+			}			
+		"""
+	}
+		
+}
+
+shaders = {
+	ao_sun_bake_stream_out = {
+		contexts = {
+			default = {	
+				passes_sort_mode="immediate"
+				passes = [
+					{ hlsl_shader="ao_sun_bake_stream_out" render_states="filter" }
+				]		
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="" platforms = "D3D11"} 
+			]
+		} 		
+	}
+}
+
+static_compile = [
+	{ shader="ao_sun_bake_stream_out" defines="" }	
+]

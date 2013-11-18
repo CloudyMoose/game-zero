@@ -1,0 +1,184 @@
+// in this context include refers to another shader file
+includes = [ "core/rendering/common.shader_source", "core/rendering/base_dx11.shader_source", "core/rendering/base_mobile.shader_source" ] 
+
+render_states = {
+	ocean_water = {
+		inherits = "opacity"
+		states = {
+			//fill_mode = "fill_wireframe"	
+			z_write_enable = "false"
+			z_enable = "true"
+			cull_mode = "cull_none"
+			
+			//blend_enable = "true"
+			//blend_op = "blend_op_add"
+			//dest_blend = "blend_one"
+			//src_blend = "blend_one"
+			
+		}
+	}
+	/*
+	ocean_water = {
+		inherits = "opacity"
+		states = {			
+		}
+	}
+	*/
+}
+
+hlsl_shaders = {
+	ocean_water = {		
+		includes = [ "common", "gbuffer_access" ]
+		samplers = {
+			normal_map = { sampler_states = "wrap_anisotropic" }
+			light_accumulation = { sampler_states = "clamp_point" }			
+			depth = { sampler_states = "clamp_point" }
+		}
+		 
+		code="""
+			struct VS_INPUT {
+				float4 position : POSITION;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 w : TEXCOORD0;
+				float3 wp : TEXCOORD1;
+				float3 debug_col : TEXCOORD2;				
+			};			 			
+			
+			CBUFFER_START(c0)
+				float4x4 world;
+				float4x4 view_proj;
+				float4x4 view;
+				float4x4 proj;
+				float4x4 inv_view;
+				
+				float2 layer0_normal_tile_size; // exports={ name="Layer 0 Normal Map Tile" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+				float2 layer1_normal_tile_size; // exports={ name="Layer 1 Normal Map Tile" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+				
+				float2 layer0_normal_tile_scroll_speed; // exports={ name="Layer 0 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+				float2 layer1_normal_tile_scroll_speed; // exports={ name="Layer 1 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}				
+				
+				float refraction_amount; // exports={ name="Refraction Amount" type="scalar" value=0.01 min=0.0 max=1.0 step=0.001 }		
+				
+				float3 color_extinction; // exports={ name="RGB color extinction depth" type="vector3" value=[4.5 75 300] min=[0 0 0] max=[300 300 300] step=[0.2 0.2 0.2] }	
+				float3 depth_color; // exports={ name="Deep Water Color" type="vector3" value=[0.1 0.1 0.4] min=[0 0 0] max=[4 4 4] step=[0.005 0.005 0.005] }					
+			CBUFFER_END			
+			
+			sampler2D depth;
+			sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			sampler2D light_accumulation;			
+			
+			float intersect_plane(float3 ray_origin, float3 ray_dir, float3 plane_normal, float d) {				
+				return -(dot(ray_origin, plane_normal)+d) / dot(ray_dir, plane_normal);
+			}
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;								
+				
+				float3 normal = world._m20_m21_m22;
+				float4 view_plane = float4(mul(normal, (float3x3)view), 1);
+				view_plane.w = -dot(view_plane.xyz, mul(float4(world._m30_m31_m32,1), view));				
+				
+				float3 p = input.position.xzy * camera_unprojection;
+				float n = camera_near_far.x;
+				float f = camera_near_far.y;
+				
+				float3 origin = float3(p.x * n, n, p.z * n);		
+				float3 dest = float3(p.x * (n+f), (n+f) , p.z * (n+f));
+				float3 dir = normalize(dest - origin);
+				
+				float t = intersect_plane(origin, dir, view_plane.xyz, view_plane.w);					
+				if (t < 0) {					
+					dest += view_plane.xyz * -(dot(dest, view_plane.xyz) + view_plane.w);
+					dir = normalize(dest - origin);
+					t = intersect_plane(origin, dir, view_plane.xyz, view_plane.w);
+				}				
+				
+				float3 vp = (dot(origin, view_plane.xyz) + view_plane.w) < 0 ? origin : origin + dir * clamp(t, 0, f);
+				o.position = mul(float4(vp, 1), proj);
+				o.wp = mul(float4(vp, 1), inv_view);
+				o.w = encode_world_pos(o.position, camera_unprojection);								
+				o.debug_col = (t <= 0 || t > f) ? float3(0,1,0) : float3(1,0,0);				
+				
+				return o;
+			}			
+
+			float4 ps_main(PS_INPUT input			
+				#ifdef GCM
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float2 wpos : VPOS
+				#endif
+				) : SV_TARGET0 
+			{					
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					half2 screen_uv = wpos.xy / back_buffer_size;					
+				#else
+					half2 screen_uv = input.position.xy / back_buffer_size;							
+				#endif			
+				
+				float3 wp = input.wp;				
+				
+				float4 uv = wp.xyxy / float4(layer0_normal_tile_size, layer1_normal_tile_size) + time * float4(layer0_normal_tile_scroll_speed, layer1_normal_tile_scroll_speed);				
+				half2 tnormal_grad = decode_normal_grad(tex2D(normal_map, uv.xy)) + decode_normal_grad(tex2D(normal_map, uv.zw));
+				half3 tnormal = normalize(half3(tnormal_grad, 1));
+				half2 refracted_uv = screen_uv + tnormal.xy * refraction_amount;
+				
+				half3 under_water_color = tex2D(light_accumulation, refracted_uv).rgb;
+				float d = gbuffer_decode_depth(tex2D(depth, refracted_uv));
+				float3 geometry_wp = decode_world_pos(input.w, d);
+
+				//float geometry_distance = length(geometry_wp - ray_origin);				
+				//float intersection_distance = geometry_distance - t;				
+				
+				//bool underwater = ((dot(ray_origin, input.plane.xyz)+input.plane.w) < 0);
+				
+				float t = 1;
+				//t = t > 0 ? 1 : 0;
+				//t *= intersection_distance < 0 ? 0 : 1;
+				//t *= saturate(intersection_distance / 0.125);				
+				
+				float water_depth = abs(geometry_wp.z - wp.z);
+				under_water_color = lerp(under_water_color, depth_color, saturate(water_depth / color_extinction)) ;
+								
+				//return float4(input.debug_col,1);
+				//return float4(frac(uv.xy), 0, 1);
+				
+				return float4(float3(0.1, 0.1, 0.1) + under_water_color, t);
+				//return underwater ? float4(lerp(under_water_color, float3(0.5, 0.5, 1.0), saturate(geometry_distance/10)), 1) : float4(float3(0.1, 0.1, 0.1) + under_water_color, t);
+				
+			}	
+		"""
+	}
+}
+
+shaders = {
+	ocean_water = {
+		editor_options = [
+		]
+		
+		contexts = {
+			default = {	
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					] 
+					fail = [
+						{ layer="water" hlsl_shader="ocean_water" render_states="ocean_water" }
+					]
+				}]								
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	}
+}

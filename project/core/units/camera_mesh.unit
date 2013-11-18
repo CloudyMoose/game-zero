@@ -1,0 +1,22 @@
+
+lights = {
+}
+lod = [
+]
+materials = [
+	"core/units/camera_mesh"
+]
+renderables = {
+	g_camera_mesh = {
+		culling = "bounding_volume"
+		shadow_caster = false
+		viewport_visible = true
+	}
+}
+snap_points = [
+]
+visibility_groups = {
+	camera = [
+		"g_camera_mesh"
+	]
+}

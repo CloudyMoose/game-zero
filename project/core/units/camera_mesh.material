@@ -1,0 +1,17 @@
+
+dummy_camera = {
+	shader = "base:DIFFUSE_MAP"
+	textures = {
+		diffuse_map = "core/units/camera_mesh_df"
+	}
+	variables = {
+		glossiness = {
+			type = "scalar"
+			value = 0.019
+		}
+		specular = {
+			type = "scalar"
+			value = 0.035
+		}
+	}
+}

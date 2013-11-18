@@ -1,0 +1,11 @@
+// ---------------------------------------------------------------------------------------------------
+// Resource generators for baked lighting integration
+
+resource_generators = {
+	ao_sun_occlusion = {
+		modifiers = [
+			{ type = "generate_mips" target="input_color" }
+			{ type = "fullscreen_pass" shader="ao_integrator:SUN_OCCLUSION" input="input_color" output="output_color_1x1" }
+		]
+	}
+}

@@ -1,0 +1,502 @@
+
+"#ID[3122521ea1f69bd7]" = {
+	defines = "DIFFUSE_MAP SELF_ILLUMINATION_MAP"
+	semantics = [
+	]
+	shader = "base"
+	variables = [
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			name = "Self Illumination Map"
+			sort_tag = "5_SELF_ILLUMINATION"
+			type = "resource"
+			variable = "self_illumination_map"
+		}
+		{
+			max = 10
+			min = 0
+			name = "Self Illumination Multiplier"
+			step = 0.01
+			type = "scalar"
+			value = 1
+			variable = "self_illumination_multiplier"
+		}
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			name = "Self Illumination Map"
+			sort_tag = "5_SELF_ILLUMINATION"
+			type = "resource"
+			variable = "self_illumination_map"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = 10
+			min = 0
+			name = "Self Illumination Multiplier"
+			sort_tag = "5_SELF_ILLUMINATION1"
+			step = 0.01
+			type = "scalar"
+			value = 1
+			variable = "self_illumination_multiplier"
+		}
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			name = "Self Illumination Map"
+			sort_tag = "5_SELF_ILLUMINATION"
+			type = "resource"
+			variable = "self_illumination_map"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = 10
+			min = 0
+			name = "Self Illumination Multiplier"
+			sort_tag = "5_SELF_ILLUMINATION1"
+			step = 0.01
+			type = "scalar"
+			value = 1
+			variable = "self_illumination_multiplier"
+		}
+	]
+}
+"#ID[47e318587146fb0d]" = {
+	defines = "INSTANCED"
+	semantics = [
+	]
+	shader = "base"
+	variables = [
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+	]
+}
+"#ID[708cf7702d33150e]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "base"
+	variables = [
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+	]
+}
+"#ID[a6619130d48d762d]" = {
+	defines = "CAMERA_LOCK_XY CAMERA_LOCK_Z DIFFUSE_MAP"
+	semantics = [
+	]
+	shader = "skydome"
+	variables = [
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			name = "Diffuse Map"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			max = 10
+			min = 0
+			name = "Skydome Intensity Multiplier"
+			step = 0.1
+			type = "scalar"
+			value = 1
+			variable = "intensity"
+		}
+	]
+}
+"#ID[babf855a542739e4]" = {
+	defines = "DIFFUSE_MAP"
+	semantics = [
+	]
+	shader = "base"
+	variables = [
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			name = "Diffuse Map"
+			sort_tag = "0_DIFFUSE_MAP"
+			type = "resource"
+			variable = "diffuse_map"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+	]
+}
+"#ID[e4ed3d5e49cf83b6]" = {
+	defines = "VC_COMPRESSED VC_TINT_RGB"
+	semantics = [
+	]
+	shader = "base"
+	variables = [
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Glossiness Amount"
+			sort_tag = "1_MATERIAL_MAP_0"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "glossiness"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Specular Mask"
+			sort_tag = "1_MATERIAL_MAP_1"
+			step = 0.001
+			type = "scalar"
+			value = 0.8
+			variable = "specular"
+		}
+		{
+			max = [
+				1
+				1
+				1
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Diffuse RGB"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "diffuse_rgb"
+		}
+	]
+}

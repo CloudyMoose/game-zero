@@ -1,0 +1,33 @@
+
+actors = [
+	{
+		enabled = true
+		name = "box"
+		node = "box"
+		shapes = [
+			{
+				material = "default"
+				shape = "box"
+				template = "character"
+				type = "sphere"
+			}
+		]
+		template = "keyframed"
+	}
+]
+movers = [
+	{
+		collision_filter = "default"
+		height = 2
+		name = "default"
+		radius = 0.5
+		slope_limit = 0.707
+	}
+	{
+		collision_filter = "default"
+		height = 1
+		name = "crouch"
+		radius = 0.5
+		slope_limit = 0.707
+	}
+]

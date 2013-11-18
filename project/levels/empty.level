@@ -1,0 +1,181 @@
+
+flow = {
+	nodes = [
+	]
+}
+level_references = [
+]
+level_settings = {
+	num_background_units = 1
+	shading_environment = "core/rendering/default_outdoor"
+	sound_environment = ""
+	timpani_sound_environment = "default"
+}
+navmeshes = [
+]
+object_sets = {
+}
+particle_effects = [
+]
+prototypes = [
+	{
+		color = [
+			255
+			255
+			255
+			255
+		]
+		physics_material = "default"
+		pos = [
+			0
+			-50
+			2
+		]
+		radius = [
+			50.5
+			0.5
+			2
+		]
+		rot = [
+			0
+			0
+			0
+			-1
+		]
+		shape_template = "default"
+		visible = true
+	}
+	{
+		color = [
+			255
+			255
+			255
+			255
+		]
+		physics_material = "default"
+		pos = [
+			0
+			50
+			2
+		]
+		radius = [
+			50.5
+			0.5
+			2
+		]
+		rot = [
+			0
+			0
+			0
+			-1
+		]
+		shape_template = "default"
+		visible = true
+	}
+	{
+		color = [
+			255
+			255
+			255
+			255
+		]
+		physics_material = "default"
+		pos = [
+			50
+			0
+			2
+		]
+		radius = [
+			50.5
+			0.5
+			2
+		]
+		rot = [
+			0
+			0
+			-0.707107
+			-0.707107
+		]
+		shape_template = "default"
+		visible = true
+	}
+	{
+		color = [
+			255
+			255
+			255
+			255
+		]
+		physics_material = "default"
+		pos = [
+			-50
+			0
+			2
+		]
+		radius = [
+			50.5
+			0.5
+			2
+		]
+		rot = [
+			0
+			0
+			-0.707107
+			-0.707107
+		]
+		shape_template = "default"
+		visible = true
+	}
+]
+scatter = [
+]
+sounds = [
+]
+splines = [
+]
+triggers = [
+]
+units = [
+	{
+		data = {
+		}
+		id = "8dbb4908-df19-477d-8013ee53ed8377fa"
+		lights = {
+		}
+		material = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+		pos = [
+			0
+			0
+			0
+		]
+		rot = [
+			0
+			0
+			0
+			-1
+		]
+		type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+	{
+		data = {
+		}
+		id = "skydome-unit"
+		lights = {
+		}
+		material = "core/editor_slave/units/skydome/skydome"
+		pos = [
+			0
+			0
+			0
+		]
+		rot = [
+			0
+			0
+			0
+			1
+		]
+		type = "core/editor_slave/units/skydome/skydome"
+	}
+]
+volumes = [
+]

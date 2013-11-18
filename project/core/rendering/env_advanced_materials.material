@@ -1,0 +1,151 @@
+dof = {	
+	shader = "dof:DOWNSCALE_COC"
+	variables = {
+		amount = {
+			type = "scalar"
+			value = 0
+		}
+		skydome_blur = {
+			type = "scalar"
+			value = 0
+		}
+		
+		near = {
+			type = "vector2"
+			value = [
+				3.2
+				1.6
+			]
+		}
+		far = {
+			type = "vector2"
+			value = [
+				18.9
+				9
+			]
+		}		
+	}
+}
+
+fog = {
+	shader = "depth_fog"
+	textures = {
+	}
+	variables = {
+		depth_range = {
+			type = "vector2"
+			value = [
+				5
+				617
+			]
+		}
+		fog_color = {
+			type = "vector3"
+			value = [
+				0.612244897959184
+				0.777310924369748
+				1.44357743097239
+			]
+		}
+		sun_blend = {
+			type = "vector3"
+			value = [
+				1
+				8
+				1
+			]
+		}
+	}
+}
+global_shadow_mask_fill = {
+	shader = "global_shadow_mask:FILL"
+}
+global_shadow_mask = {
+	shader = "global_shadow_mask"
+}
+luminance_adaption = {
+	shader = "luminance_adaption"
+	textures = {
+	}
+	variables = {
+		adaption_settings = {
+			type = "vector3"
+			value = [
+				0.6
+				0.075
+				1
+			]
+		}
+		reset_adaption = {
+			type = "scalar"
+			value = 0			
+		}
+	}
+}
+
+shadow_cutter = {
+	shader = "shadow_cutter"
+}
+ssao_upscale = {
+	shader = "ssao_upscale"
+}
+tone_mapping = {
+	shader = "tone_mapping"
+	textures = {
+	}
+	variables = {
+		bright_pass_threshold_offset = {
+			type = "vector2"
+			value = [
+				0.2
+				0.1
+			]
+		}
+		exposure = {
+			type = "scalar"
+			value = 1.333
+		}
+	}
+}
+
+filmic_tone_mapping = {
+	shader = "tone_mapping:COLOR_GRADING:FILMIC:LUMINANCE_ADAPTION:VIGNETTE"
+	textures = {
+	}
+	variables = {
+		exposure = {
+			type = "scalar"
+			value = 0.3
+		}
+		scale_falloff_opacity = {
+			type = "vector3"
+			value = [
+				3 
+				2.5 
+				1.0
+			]
+		}
+	}
+}
+
+bloom_init = {
+	shader = "tone_mapping:BRIGHT_PASS:FILMIC:LUMINANCE_ADAPTION"
+	variables = {
+		exposure = {
+			type = "scalar"
+			value = 0.005
+		}
+	}	
+}
+
+vo_ssao = {
+	shader = "vo_ssao"
+}
+
+global_lighting = {
+	shader = "global_lighting"
+}
+
+global_lighting_skin = {
+	shader = "global_lighting:SKIN"
+}

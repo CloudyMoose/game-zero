@@ -1,0 +1,2 @@
+lua = ["core/editor_slave/thumbnail_server"]
+physics_properties = ["global"]

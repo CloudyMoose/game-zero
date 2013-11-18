@@ -1,0 +1,74 @@
+
+geometries = {
+	animation_preview_tile = {
+		indices = {
+			size = 6
+			streams = [ [ 0 1 3 3 2 0 ] [ 0 1 2 2 3 0 ] [ 0 1 3 3 2 0 ] [ 0 1 2 3 4 5 ] [ 0 1 2 3 4 5 ] ]
+			type = "TRIANGLE_LIST"
+		}
+		materials = [ {
+				name = "animation_preview_tile_1"
+				primitives = [ 0 1 ]
+			} ]
+		smoothing = [ 1 1 ]
+		streams = [ {
+				channels = [ {
+						index = 0
+						name = "POSITION"
+						type = "CT_FLOAT3"
+					} ]
+				data = [ -50 -50 0 50 -50 0 -50 50 0 50 50 0 ]
+				size = 4
+				stride = 12
+			} {
+				channels = [ {
+						index = 0
+						name = "NORMAL"
+						type = "CT_FLOAT3"
+					} ]
+				data = [ 0 0 1 0 0 1 0 0 1 0 0 1 ]
+				size = 4
+				stride = 12
+			} {
+				channels = [ {
+						index = 0
+						name = "TEXCOORD"
+						type = "CT_FLOAT2"
+					} ]
+				data = [ -24.75 -24.75 25.25 -24.75 -24.75 25.25 25.25 25.25 ]
+				size = 4
+				stride = 8
+			} {
+				channels = [ {
+						index = 0
+						name = "BINORMAL"
+						type = "CT_FLOAT3"
+					} ]
+				data = [ -2.28882e-007 1 0 -2.28882e-007 1 0 -2.28882e-007 1 0 -2.28882e-007 1 0 -2.28882e-007 1 0 -2.28882e-007 1 0 ]
+				size = 6
+				stride = 12
+			} {
+				channels = [ {
+						index = 0
+						name = "TANGENT"
+						type = "CT_FLOAT3"
+					} ]
+				data = [ 1 2.28882e-007 0 1 2.28882e-007 0 1 2.28882e-007 0 1 2.28882e-007 0 1 2.28882e-007 0 1 2.28882e-007 0 ]
+				size = 6
+				stride = 12
+			} ]
+	}
+}
+nodes = {
+	rp_animation_preview_tile = {
+		children = {
+			animation_preview_tile = {
+				geometries = [ "animation_preview_tile" ]
+				local = [ 1 0 0 0 0 1 0 0 0 0 1 0 -0.5 -0.5 0 1 ]
+				parent = "rp_animation_preview_tile"
+			}
+		}
+		local = [ 1 0 0 0 0 1 0 0 0 0 1 0 0.5 0.5 0 1 ]
+	}
+}
+source_path = "C:\\Users\\isak.bergh\\Documents\\3dsMax\\scenes\\preview_grid.max"

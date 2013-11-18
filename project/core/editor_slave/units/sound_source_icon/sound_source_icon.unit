@@ -1,0 +1,18 @@
+
+lights = {
+}
+lod = [
+]
+materials = [
+]
+renderables = {
+	g_sound_source_icon = {
+		culling = "bounding_volume"
+		shadow_caster = false
+		viewport_visible = true
+	}
+}
+snap_points = [
+]
+visibility_groups = {
+}

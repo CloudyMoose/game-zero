@@ -1,0 +1,25 @@
+
+input = [
+	{
+		texture = "core/rendering/color_grading_identity.dds"
+	}
+]
+output = {
+	win32 = {
+		alpha_coverage_mips = false
+		alpha_coverage_reference = 0
+		category = ""
+		filter_wrap_mode = "mirror"
+		format = "DXT1"
+		kaiser_settings = {
+			alpha = 4
+			stretch = 1
+			width = 3
+		}
+		manual_compression = true
+		mip_level_clamp = -1
+		mipmap_filter = "kaiser"
+		normal_map = false
+		use_existing_mips = false
+	}
+}

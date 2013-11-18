@@ -1,0 +1,1247 @@
+// in this context include refers to another shader file
+includes = [ "core/rendering/common.shader_source", "core/rendering/base_dx11.shader_source", "core/rendering/base_mobile.shader_source" ] 
+
+render_states = { 		
+	shadow_caster = {
+		inherits = "default"
+		states = {
+			write_mask0 = "0x0"
+			write_mask1 = "0x0"
+			write_mask2 = "0x0"
+			write_mask3 = "0x0"			
+			
+			defined_D3D11 = {
+				depth_bias = "0xff"			
+				slope_scale_depth_bias = "1.0"		
+			}
+			defined_GCM = {
+				offset_units = "5.0"
+				offset_factor = "1.0"
+			}
+			defined_GL2 = {
+				offset_units = "255.0"
+				offset_factor = "2.0"
+				depth_bias_enable = "true"
+			}
+			defined_X360 = {
+				depth_bias = "0.0002"  
+				slope_scale_depth_bias = "2.5"	
+			}
+		}
+	}					
+	
+	billboard_shadow_caster = {
+		inherits = "shadow_caster"
+		states = {
+			ndefined_GBUFFER_PARTICLES = {
+				z_write_enable = "false"
+				
+				write_mask0 = "red"
+				cull_mode = "cull_none"
+				blend_enable = "true"
+
+				blend_op = "blend_op_add"
+				src_blend = "blend_one"
+				dest_blend = "blend_inv_src_color"
+			}
+		}
+	}
+	
+	billboard_opacity = {
+		inherits = "opacity"
+		states = {
+			defined_BLEND_ADDITIVE  = {
+				dest_blend = "blend_one"
+				src_blend = "blend_src_alpha"				
+			}
+			defined_WIREFRAME = {
+				fill_mode = "fill_wireframe"
+			}
+			defined_SCREEN_SPACE = {
+				cull_mode = "cull_none"
+				z_enable = "false"
+			}
+		}
+	}
+}
+
+sampler_states = {
+	shadow_map_billboard = {
+		inherits = "clamp_point"
+		states = { 			
+			defined_D3D11 = {
+				comparison_func = "less"
+				filter = "comparison_min_mag_linear_mip_point"
+			}
+			defined_GCM = {
+				comparison_func = "less"
+				filter = "min_mag_mip_linear"
+			}
+			defined_GL2 = {
+				comparison_func = "less"
+				filter = "min_mag_mip_linear"
+			}			
+		}
+	}
+}
+
+hlsl_shaders = {
+	billboard_depth_only = {
+		includes = [ "common", "gbuffer_access" ]
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }				
+			}
+		}			
+		
+		code="""
+			#if defined(DIFFUSE_MAP)
+				#define UV0
+				sampler2D diffuse_map;
+			#endif
+
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#ifdef GL2
+					float2 corner_info : COLOR1;
+				#else
+					float2 corner_info : POSITION1;
+				#endif
+				float2 size : TEXCOORD7;
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				#if defined(ROTATION)
+					float rotation : TEXCOORD1;
+				#endif
+				#if defined(UV_ANIMATION)
+					float frame : TEXCOORD0;
+				#endif
+				#if defined(PIVOT)
+					float2 pivot : TEXCOORD6;
+				#endif
+				#if defined(EXTERNAL_ROTATION) || defined(TANGENT_LOCKED)
+					float3 tangent : TANGENT;
+					#if defined(EXTERNAL_ROTATION)
+						float3 binormal : BINORMAL;
+					#endif
+				#endif				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif				
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				float4 normal_depth : TEXCOORD1;
+			};
+			
+			CBUFFER_START(c0)
+				float4x4 view;
+				float4x4 view_proj;
+				#if defined(UV_ANIMATION)
+					float2 animation_frame_size; // exports={ name="Frame Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[1 1] step=[0.000244140625 0.000244140625]}
+				#endif				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT i) {				
+				PS_INPUT o;
+				
+				#if defined(EXTERNAL_ROTATION)
+					float3 y = i.tangent;
+					float3 x = i.binormal;
+				#elif defined(TANGENT_LOCKED)
+					float3 y = i.tangent;
+					float3 x = normalize(cross(normalize(i.position.xyz - camera_pos), y));
+				#else
+					float3 x = view._m00_m10_m20;
+					float3 y = view._m02_m12_m22;
+				#endif
+				
+				#if defined(ROTATION)
+					float c = cos(i.rotation);
+					float s = sin(i.rotation);
+					float3 x_axis = x * c + y * s;
+					float3 y_axis = y * c - x * s;
+				#else
+					float3 x_axis = x;
+					float3 y_axis = y;
+				#endif
+				
+				#if defined(PIVOT)
+					float2 ci = i.corner_info;
+					float2 corner = ci * ( (1-(ci*0.5+0.5)) * i.size + ci * (i.pivot * i.size) );
+				#else					
+					float2 corner = i.corner_info * (i.size * 0.5);					
+				#endif
+				
+				float3 wp = i.position.xyz + (x_axis * corner.x + y_axis * corner.y);
+				#if defined(NEEDS_WORLD_POS)
+					o.wp = wp;
+				#endif
+				float4 p = mul(float4(wp, 1), view_proj);
+				o.position = p;
+				
+				half3 n = lerp(normalize(wp - i.position.xyz), -view._m01_m11_m21, 0.3);
+				n = mul(n, (half3x3)view);
+				o.normal_depth = float4(n, p.z);
+				
+				#if defined(UV0)
+					float2 uv = (i.corner_info * float2(1,-1) * 0.5 + 0.5);
+					#if defined(UV_ANIMATION)
+						uv *= animation_frame_size;						
+						float n_frames = 1.f / animation_frame_size.x;
+						int frame_x = fmod(i.frame, n_frames);
+						int frame_y = i.frame / n_frames;
+						float2 offset = float2(frame_x * animation_frame_size.x, frame_y * animation_frame_size.y);
+						uv += offset;
+					#endif
+					o.uv = uv;
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					o.color = decode_vertex_color(i.color);
+				#endif				
+				
+				return o;
+			}
+			
+			float4 fast_gamma_to_linear(float4 c) {
+				return c * c;
+			}
+			
+			float4 ps_main(PS_INPUT i) : SV_TARGET0 {
+				#if defined(DIFFUSE_MAP)				
+					float4 c = tex2D(diffuse_map, i.uv);
+				#else
+					float4 c = float4(1,1,1,1);
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					float4 vc = fast_gamma_to_linear(i.color);
+				#else
+					float4 vc = float4(1,1,1,1);
+				#endif
+			
+				#if defined(GBUFFER_PARTICLES)
+					#if defined(ONE_BIT_ALPHA)
+						float op = c.a;
+						#if defined(DISSOLVE_USING_VERTEX_ALPHA)
+							one_bit_alpha_mask(op, 1-vc.a);
+						#else
+							one_bit_alpha_mask(op, ONE_BIT_ALPHA_REF);
+						#endif	
+					#endif
+					return float4(1,1,1,1);					
+				#else		
+					//float d = i.normal_depth.w - normalize(i.normal_depth.xyz) * 0.01;
+					//return float4(d,d,d,c.a);
+					c *= vc;
+					return float4(c.aaaa);
+				#endif				
+			}	
+		"""
+	}	
+
+	billboard = {
+		includes = [ "common",  "gbuffer_access", "fog" ]
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }				
+			}
+			defined_NORMAL_MAP = {
+				normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_MATERIAL_MAP = {
+				material_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}
+			defined_DISTORTION = {
+				normal_map = { sampler_states = "wrap_anisotropic" }
+				light_accumulation = { sampler_states = "clamp_linear" }
+			}
+			ndefined_D3D11 = {
+				defined_SOFT_PARTICLES = {
+					depth = { sampler_states = "clamp_point" }
+				}
+			}
+			
+			ndefined_GBUFFER_PARTICLES = {
+				defined_SHADOW_RECEIVING = {
+					defined_D3D11 = {
+						shadow_map_sampler = { sampler_states = "shadow_map_billboard" }
+					}
+					defined_GCM = {
+						shadow_map = { sampler_states = "shadow_map_billboard" }	
+					}
+					defined_GL2 = {
+						shadow_map = { sampler_states = "shadow_map_billboard" }	
+					}					
+				}
+			}			
+		}	
+		
+		code="""		
+			#if !defined(BLEND_ADDITIVE) && !defined(GBUFFER_PARTICLES) && !defined(DISTORTION)
+				#define PARTICLE_LIGHTING
+				
+				#if defined(D3D11)
+					#define BACK_LIGHTING					
+				#endif
+			#endif
+			
+			#if defined(DIFFUSE_MAP) || defined(NORMAL_MAP) || defined(MATERIAL_MAP) || defined(DISTORTION)
+				#define UV0
+			#endif
+			
+			#if defined(SOFT_PARTICLES) || defined(GBUFFER_PARTICLES) || !defined(BLEND_ADDITIVE)
+				#define NEEDS_CLIP_DEPTH
+			#endif
+			
+			#if defined(USE_DEPTH_RT) && defined(GBUFFER_PARTICLES)
+				#define NEEDS_LINEAR_DEPTH
+			#endif
+			
+			#if defined(NEEDS_CLIP_DEPTH) || defined(NEEDS_LINEAR_DEPTH)
+				#define NEEDS_DEPTH
+			#endif
+			
+			#if defined(PARTICLE_LIGHTING)
+				#define NEEDS_WORLD_POS
+
+				#if defined(SHADOW_RECEIVING)
+					#if defined(D3D11)
+						SamplerComparisonState shadow_map_sampler;				
+						Texture2D<float> shadow_map;
+					#else
+						sampler2D shadow_map;
+					#endif
+					
+					half shadow_intensity(float4 sm_pos) {
+						float2 sm_resolution;
+						#ifdef D3D11
+							shadow_map.GetDimensions(sm_resolution.x, sm_resolution.y);
+						#else
+							sm_resolution = float2(1024, 1024);
+						#endif
+						float4 tscale = float4(1.f / sm_resolution.x, 1.f / sm_resolution.y, 0.f, 0.f);
+
+						half a = 0;					
+						for( float xx = -0.5; xx <= 0.5; xx += 1.0 ) {
+							for( float yy = -0.5; yy <= 0.5; yy += 1.0 ) {						
+								#ifdef D3D11
+									a += shadow_map.SampleCmpLevelZero(shadow_map_sampler, sm_pos.xy + (float2( xx, yy ) * tscale.xy), sm_pos.z);
+								#else
+									a += tex2Dproj(shadow_map, sm_pos + (float4( xx, yy, 0,0) * tscale));
+								#endif
+							}
+						}				
+						
+						#ifdef GCM
+							return 1-(a * 0.25);
+						#else
+							return a * 0.25;
+						#endif					
+					}
+				#endif
+			#else
+				// No need for tessellation if particles are unlit
+				#if defined(TESSELLATION)
+					#undef TESSELLATION
+				#endif				
+			#endif			
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(NORMAL_MAP)
+				sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+			#endif
+			
+			#if defined(MATERIAL_MAP)
+				sampler2D material_map; // exports={ name="Glossiness/Specular/Mask Map" type="resource" }
+			#endif
+			
+			#if defined(DISTORTION)
+				sampler2D normal_map; // exports={ name="Distortion Normal Map" type="resource" }
+				sampler2D light_accumulation;
+			#endif
+			
+			#if defined(SOFT_PARTICLES) 
+				#if defined(D3D11)
+					Texture2D<float4> depth;
+				#else
+					sampler2D depth;
+				#endif
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#ifdef GL2
+					float2 corner_info : COLOR1;
+				#else
+					float2 corner_info : POSITION1;
+				#endif				
+				float2 size : TEXCOORD7; // exports={ name="Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[10 10] step=[0.01 0.01] }
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				#if defined(ROTATION)
+					float rotation : TEXCOORD1; // exports = { name="Rotation" type="scalar" value=0 min=0 max=6.28319 step=0.0174533 }
+				#endif
+				#if defined(UV_SCALE)
+					#if defined(UV_ANIMATION)
+						float3 uv_data : TEXCOORD0; // exports = { name="UV Scale/Frame" type="vector3" value=[0 0 0] min=[0 0 0] max=[100 100 100] step=[0.1 0.1 1] }
+						#define uv_frame uv_data.z
+					#else
+						float2 uv_data : TEXCOORD0;						
+					#endif				
+					#define uv_scale uv_data.xy
+				#else
+					#if defined(UV_ANIMATION)
+						float uv_frame : TEXCOORD0; // exports = { name="UV Frame" type="scalar" value=0 min=0 max=100 step=1 }
+					#endif
+				#endif
+				#if defined(PIVOT)
+					float2 pivot : TEXCOORD6; // exports={ name="Pivot" type="vector2" value=[0.5 0.5] min=[0 0] max=[1 1] step=[0.001 0.001] }
+				#endif
+				#if defined(EXTERNAL_ROTATION) || defined(TANGENT_LOCKED)
+					float3 tangent : TANGENT; // exports={ name="Tangent" type="vector3" value=[0 0 1] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					#if defined(EXTERNAL_ROTATION)
+						float3 binormal : BINORMAL; // exports={ name="Binormal" type="vector3" value=[1 0 0] min=[-1 -1 -1] max=[1 1 1] step=[0.001 0.001 0.001] }
+					#endif
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR;
+				#endif
+				#if defined(NEEDS_DEPTH)
+					float2 depth : TEXCOORD1;
+				#endif
+				
+				#if defined(NEEDS_WORLD_POS)
+					float3 wp : TEXCOORD5;
+				#endif
+				
+				#if defined(GBUFFER_PARTICLES)
+					#if defined(NORMAL_MAP)
+						float3 tsm0 : TEXCOORD2;
+						float3 tsm1 : TEXCOORD3;
+						float3 tsm2 : TEXCOORD4;
+					#else
+						float3 normal : TEXCOORD2;
+					#endif
+				#endif
+				
+				#if defined(PARTICLE_LIGHTING)
+					float4 basis0 : TEXCOORD2;
+					float4 basis1 : TEXCOORD3;
+					float4 basis2 : TEXCOORD4;
+					#if defined(BACK_LIGHTING)
+						float3 back_lighting : TEXCOORD6;
+					#endif
+				#endif
+			};
+			
+			CBUFFER_START(c_billboard)
+				#if defined(SCREEN_SPACE)
+					float4x4 proj;
+					float4x4 view;
+				#else
+					float4x4 view;
+					float4x4 view_proj;
+				#endif
+				#if defined(UV_ANIMATION)
+					float2 animation_frame_size; // exports={ name="Frame Size" type="vector2" value=[0.1 0.1] min=[0 0] max=[1 1] step=[0.000244140625 0.000244140625]}
+				#endif
+				#if defined(SOFT_PARTICLES)
+					float depth_fade_distance; // exports={ name="Depth Fade Distance" type="scalar" value=1 min=0.01 max=30 step=0.1 }
+				#endif
+				#if defined(GBUFFER_PARTICLES) && !defined(MATERIAL_MAP)
+					float specular; // exports={ name="Specular Mask" type="scalar" value=0.8 min=0.0 max=1.0 step=0.001 }
+					float glossiness; // exports={ name="Glossiness Amount" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }
+				#endif
+				#if defined(PARTICLE_LIGHTING)
+					float3 ambient_bottom_color;
+					float3 ambient_top_color;
+					#if defined(LOCAL_LIGHTS)
+						float n_frustum_lights;
+						float4x4 frustum_lights[25];
+					#endif					
+					#ifdef SHADOW_RECEIVING
+						float4x4 sun_world_to_shadow;
+					#endif
+				#endif
+				#if !defined(PARTICLE_LIGHTING) && !defined(GBUFFER_PARTICLES)
+					float emissive_particle_intensity;
+				#endif
+				#if defined(DISTORTION)
+					float2 distortion_strength; // exports={ name="Distortion Strength" type="vector2" value=[1.0 1.0] min=[ 1 1 ] max=[300 300] step=[1 1] }
+				#endif
+			CBUFFER_END
+			
+			#if defined(PARTICLE_LIGHTING)
+				void calc_lighting(out float4 basis0, out float4 basis1, out float4 basis2, out float3 back_lighting, float3 wp, float3 normal) {
+					// Rotate hl2 basis into world space - move to CPU
+					#ifdef SCREEN_SPACE
+						half3 hl2_basis0 = mul(half3(                 0, 1.f/sqrt(3.f),  sqrt(2.f/3.f)), (float3x3)camera_world);
+						half3 hl2_basis1 = mul(half3(   1.f / sqrt(2.f), 1.f/sqrt(3.f), -(1.f/sqrt(6.f))), (float3x3)camera_world);
+						half3 hl2_basis2 = mul(half3(-(1.f / sqrt(2.f)), 1.f/sqrt(3.f), -(1.f/sqrt(6.f))), (float3x3)camera_world);
+					#else
+						half3 hl2_basis0 = mul(half3(0, -1.f/sqrt(3.f), sqrt(2.f/3.f)), (float3x3)camera_world);
+						half3 hl2_basis1 = mul(half3(1.f / sqrt(2.f), -1.f/sqrt(3.f), -(1.f/sqrt(6.f))), (float3x3)camera_world);
+						half3 hl2_basis2 = mul(half3(-(1.f / sqrt(2.f)), -1.f/sqrt(3.f), -(1.f/sqrt(6.f))), (float3x3)camera_world);
+					#endif
+					
+					half3 n = normal;
+					basis0.w = n.x;
+					basis1.w = n.y;
+					basis2.w = n.z;					
+					
+					#ifdef SCREEN_SPACE
+						//wp = camera_pos + view._m01_m11_m21 * camera_near_far.x + 0.3*mul(normalize(half3(wp.x, 1.f, wp.y)), (float3x3)camera_world);
+						// do some form of spherical projection of the screen space particles onto the near plane
+						wp = camera_pos + camera_near_far.x *mul(normalize(half3(wp.x, 1.f, wp.y)), (float3x3)camera_world);
+					#endif
+					
+					#ifdef SHADOW_RECEIVING
+						float4 sm_pos = mul(float4(wp, 1), sun_world_to_shadow);			
+						float sun_shadow = saturate(shadow_intensity(sm_pos));
+						sun_color *= sun_shadow;
+					#endif
+					
+					// setup global lighting
+					half3 sdir = normalize(-sun_direction);
+					half3 sun_weights = saturate(half3(dot(sdir, hl2_basis0), dot(sdir, hl2_basis1), dot(sdir, hl2_basis2)));
+					basis0.xyz = sun_weights.x * sun_color;
+					basis1.xyz = sun_weights.y * sun_color;
+					basis2.xyz = sun_weights.z * sun_color;
+					half3 ambient_bottom_weights = saturate(half3(-hl2_basis0.z, -hl2_basis1.z, -hl2_basis2.z) * 0.5 + 0.5);
+					basis0.xyz += ambient_bottom_weights.x * ambient_bottom_color;
+					basis1.xyz += ambient_bottom_weights.y * ambient_bottom_color;
+					basis2.xyz += ambient_bottom_weights.z * ambient_bottom_color;
+					half3 ambient_top_weights = saturate(half3(hl2_basis0.z, hl2_basis1.z, hl2_basis2.z) * 0.5 + 0.5);
+					basis0.xyz += ambient_top_weights.x * ambient_top_color;
+					basis1.xyz += ambient_top_weights.y * ambient_top_color;
+					basis2.xyz += ambient_top_weights.z * ambient_top_color;
+					#if defined(BACK_LIGHTING)
+						#if defined(SCREEN_SPACE)
+							back_lighting = saturate(dot(sdir, -view._m01_m11_m21)) * sun_color;
+						#else
+							back_lighting = saturate(dot(sdir, view._m01_m11_m21)) * sun_color;
+						#endif						
+						
+						#if defined(SHADOW_RECEIVING) && defined(SUN_SCATTER_FALLOFF)
+							float sf = scatter_falloff(sm_pos);						
+							back_lighting *= sun_shadow;							
+							sf = pow(sf + 0.001, 0.3);
+							back_lighting *= sf; //saturate(0.05 + sf*0.95);
+						#else
+							back_lighting *= 0.25f;
+						#endif						
+					#else
+						back_lighting = float3(0,0,0);
+					#endif
+					
+					// do local lights
+					#if defined(LOCAL_LIGHTS)
+						// todo: investigate why this doesn't work on PS3 or better - move entire turn-up + lighting to SPU
+						static const int type_omni = 0;
+						static const int type_spot = 1;					
+						int num_lights = (int)n_frustum_lights;					
+						for (int idx=0; idx<num_lights; ++idx) {					
+							float3 lpos = frustum_lights[idx]._m00_m01_m02;
+							float3 ldir = frustum_lights[idx]._m10_m11_m12;
+							int ltype = (int)frustum_lights[idx]._m03;						
+							float3 lfalloff = frustum_lights[idx]._m20_m21_m22;
+							float2 lspotfalloff = frustum_lights[idx]._m13_m23;
+							float3 lcol = frustum_lights[idx]._m30_m31_m32;
+							
+							float3 light_vector = lpos - wp; // This used to be center.. validate if not wp is better
+							float l = length(light_vector) + 0.00001;
+							float attn = (l > lfalloff.x ? 1-saturate((l-lfalloff.x)*lfalloff.y) : 1);
+							//attn = pow(attn, lfalloff.z);
+							light_vector /= l;
+							float spot_angle = 1-dot(light_vector, -ldir);
+							attn *= ltype == type_spot ? (spot_angle > lspotfalloff.x ? 1-saturate((spot_angle-lspotfalloff.x)*lspotfalloff.y) : 1) : 1;
+							
+							half3 lambert_atten = saturate(half3(dot(light_vector, hl2_basis0), dot(light_vector, hl2_basis1), dot(light_vector, hl2_basis2)));
+							half3 col = attn*lcol;
+							basis0.xyz += lambert_atten.x * col;
+							basis1.xyz += lambert_atten.y * col;
+							basis2.xyz += lambert_atten.z * col;
+							#if defined(BACK_LIGHTING)
+								back_lighting += saturate(dot(light_vector, view._m01_m11_m21)) * col;// * 0.25;
+							#endif
+						}							
+					#endif						
+				}
+			#endif
+						
+			#if defined(TESSELLATION)
+				#define NEEDS_WORLD_POS
+				
+				struct VS_OUTPUT_HS_INPUT {
+					float3 wp : WORLDPOS;
+					float3 normal : TEXCOORD2;
+					
+					#if defined(UV0)
+						float2 uv : TEXCOORD0;
+					#endif
+					#if defined(VERTEX_COLOR)
+						float4 color : COLOR;
+					#endif
+					#if defined(NEEDS_DEPTH)
+						float2 depth : TEXCOORD1;
+					#endif										
+				};				
+			
+				struct HS_CONSTANT_DATA_OUTPUT {
+					float edges[3] : SV_TessFactor;
+					float inside : SV_InsideTessFactor;					
+				};				
+			
+				#define VS_OUTPUT VS_OUTPUT_HS_INPUT
+
+				// hull shader is just a pipe through shader
+				#define HS_CONTROL_POINT_OUTPUT VS_OUTPUT_HS_INPUT				
+				
+				HS_CONSTANT_DATA_OUTPUT hs_constants(InputPatch<VS_OUTPUT_HS_INPUT, 3> p, uint patch_id : SV_PrimitiveID )
+				{
+					HS_CONSTANT_DATA_OUTPUT output = (HS_CONSTANT_DATA_OUTPUT)0;
+					
+					float3 v0 = p[0].wp;
+					float3 v1 = p[1].wp;
+					float3 v2 = p[2].wp;
+					
+					float2 half_res = back_buffer_size * 0.5;
+					const static float eps = 0.0001;
+					const static float wanted_tri_size = 16;
+					float4 clip_rect = float4(-half_res.x, -half_res.y, half_res.x, half_res.y);								
+					
+					#if defined(SCREEN_SPACE)
+						float4 p0 = float4(v0, 1);						
+						float4 p1 = float4(v1, 1);
+						float4 p2 = float4(v2, 1);
+						//float4 p0 = mul(float4(v0, 1), proj);						
+						//float4 p1 = mul(float4(v1, 1), proj);
+						//float4 p2 = mul(float4(v2, 1), proj);					
+					#else
+						float4 p0 = mul(float4(v0, 1), view_proj);						
+						float4 p1 = mul(float4(v1, 1), view_proj);
+						float4 p2 = mul(float4(v2, 1), view_proj);
+					#endif
+					p0.xy = (p0.xy / (p0.w+eps)) * half_res;	
+					p1.xy = (p1.xy / (p1.w+eps)) * half_res;
+					p2.xy = (p2.xy / (p2.w+eps)) * half_res;
+					
+					float4 tessellation_factors = float4(0,0,0,0);
+					
+					bool near_rejected = dot(float3(p0.z,p1.z,p2.z) < 0, 1) == 3;
+					bool left_rejected = dot(float3(p0.x,p1.x,p2.x) < clip_rect.x, 1) == 3;
+					bool right_rejected = dot(float3(p0.x,p1.x,p2.x) > clip_rect.z, 1) == 3;
+					bool top_rejected = dot(float3(p0.y,p1.y,p2.y) > clip_rect.w, 1) == 3;
+					bool bottom_rejected = dot(float3(p0.y, p1.y, p2.y) < clip_rect.y, 1) == 3;				
+					bool culled = (near_rejected || left_rejected || right_rejected || top_rejected || bottom_rejected);
+					if (!culled) {
+						float3 tf = float3(length(p2 - p1) / wanted_tri_size,
+							length(p2 - p0) / wanted_tri_size,
+							length(p1 - p0) / wanted_tri_size);
+						
+						tessellation_factors = float4(tf.xyz,max(tf.z, max(tf.x, tf.y)));						
+					}
+					
+					//float4 tessellation_factors = float4(1,1,1,1);
+					
+					output.edges[0] = tessellation_factors.x;
+					output.edges[1] = tessellation_factors.y;
+					output.edges[2] = tessellation_factors.z;
+					output.inside = tessellation_factors.w;				
+
+					return output;
+				}
+
+				[domain("tri")]
+				[partitioning("fractional_odd")]
+				[outputtopology("triangle_cw")]
+				[outputcontrolpoints(3)]
+				[patchconstantfunc("hs_constants")]
+				[maxtessfactor(32)]			
+				HS_CONTROL_POINT_OUTPUT hs_main(InputPatch<VS_OUTPUT_HS_INPUT, 3> inputPatch, uint cp_id : SV_OutputControlPointID )
+				{
+					HS_CONTROL_POINT_OUTPUT	o;
+					
+					o.wp =	inputPatch[cp_id].wp.xyz;
+					o.normal = inputPatch[cp_id].normal.xyz;
+					#if defined(UV0)					
+						o.uv = inputPatch[cp_id].uv;
+					#endif					
+					#if defined(VERTEX_COLOR)
+						o.color = inputPatch[cp_id].color;
+					#endif
+					
+					#if defined(NEEDS_DEPTH)
+						o.depth = inputPatch[cp_id].depth;
+					#endif										
+					
+					return o;
+				}
+				
+				[domain("tri")]
+				PS_INPUT ds_main( HS_CONSTANT_DATA_OUTPUT input, float3 barycentric_coordinates : SV_DomainLocation, const OutputPatch<HS_CONTROL_POINT_OUTPUT, 3> triangle_patch )
+				{
+					PS_INPUT o;
+					
+					float3 wp = barycentric_coordinates.x * triangle_patch[0].wp + barycentric_coordinates.y * triangle_patch[1].wp + barycentric_coordinates.z * triangle_patch[2].wp;
+					#if defined(NEEDS_WORLD_POS)
+						o.wp = wp;
+					#endif
+					
+					#if defined(SCREEN_SPACE)
+						o.position = float4(wp.xyz, 1.0);
+					#else
+						o.position = mul(float4(wp.xyz, 1.0), view_proj);
+					#endif
+					float3 normal = normalize(barycentric_coordinates.x * triangle_patch[0].normal + barycentric_coordinates.y * triangle_patch[1].normal + barycentric_coordinates.z * triangle_patch[2].normal);
+				
+					#if defined(PARTICLE_LIGHTING)
+						o.basis0 = float4(0,0,0,1);
+						o.basis1 = float4(0,0,0,1);
+						o.basis2 = float4(0,0,0,1);
+						calc_lighting(o.basis0, o.basis1, o.basis2, o.back_lighting, wp, normal);
+					#endif
+					
+					#if defined(UV0)
+						float2 uv = barycentric_coordinates.x * triangle_patch[0].uv + barycentric_coordinates.y * triangle_patch[1].uv + barycentric_coordinates.z * triangle_patch[2].uv;
+						o.uv = uv;	
+					#endif
+					
+					#if defined(VERTEX_COLOR)
+						float4 color = barycentric_coordinates.x * triangle_patch[0].color + barycentric_coordinates.y * triangle_patch[1].color + barycentric_coordinates.z * triangle_patch[2].color;						
+						o.color = color;
+					#endif						
+					
+					#if defined(NEEDS_DEPTH)
+						o.depth = barycentric_coordinates.x * triangle_patch[0].depth + barycentric_coordinates.y * triangle_patch[1].depth + barycentric_coordinates.z * triangle_patch[2].depth;
+					#endif
+					
+					return o;
+				}							
+			#else
+				#define VS_OUTPUT PS_INPUT
+			#endif
+			
+			#ifdef X360
+				VS_INPUT fetch_vertex(int index) {								
+					VS_INPUT input;
+					float4 temp;
+					
+					asm { vfetch temp, index, position };
+					input.position = temp;											
+					
+					asm { vfetch temp, index, texcoord7 };
+					input.size = temp.xy;
+					
+					#if defined(VERTEX_COLOR)							
+						asm { vfetch temp, index, color0 };
+						input.color = temp;					
+					#endif
+					
+					#if defined(ROTATION)
+						asm { vfetch temp, index, texcoord1 };
+						input.rotation = temp.x;												
+					#endif	
+
+					#if defined(UV_SCALE)
+						asm { vfetch temp, index, texcoord0 };
+						#if defined(UV_ANIMATION)
+							input.uv_data = temp.xyz;
+						#else
+							input.uv_data = temp.xy;
+						#endif					
+					#else
+						#if defined(UV_ANIMATION)
+							asm { vfetch temp, index, texcoord0 };
+							input.uv_frame = temp.x;												
+						#endif					
+					#endif					
+					
+					#if defined(PIVOT)
+						asm { vfetch temp, index, texcoord6 };
+						input.pivot = temp.xy;														
+					#endif
+
+					#if defined(EXTERNAL_ROTATION) || defined(TANGENT_LOCKED)
+						asm { vfetch temp, index, tangent };
+						input.tangent = temp.xyz;
+						#if defined(EXTERNAL_ROTATION)
+							asm { vfetch temp, index, binormal };
+							input.binormal = temp.xyz;			
+						#endif
+					#endif
+					
+					return input;
+				}
+				
+				static const float2 corners[6] = { 
+						float2(-1.f, -1.f),
+						float2(1.f, -1.f),
+						float2(1.f, 1.f),
+						float2(1.f, 1.f),
+						float2(-1.f, 1.f),
+						float2(-1.f, -1.f) 
+					};
+			
+				VS_OUTPUT vs_main(int index : INDEX) {
+					int outer_index = (index + 0.5) / 6;
+					int inner_index = index - outer_index * 6;	
+					VS_INPUT i = fetch_vertex(outer_index);
+					i.corner_info = corners[inner_index];
+			#else
+				VS_OUTPUT vs_main(VS_INPUT i) {			
+			#endif
+			
+				VS_OUTPUT o;
+				
+				#if defined(EXTERNAL_ROTATION)
+					float3 y = i.tangent;
+					float3 x = i.binormal;
+				#elif defined(TANGENT_LOCKED)
+					float3 y = i.tangent;
+					float3 x = normalize(cross(normalize(i.position.xyz - camera_pos), y));
+				#elif defined(SCREEN_SPACE)
+					float3 x = float3(1,0,0);
+					float3 y = float3(0,1,0); //float3(0,0,1);
+				#else
+					float3 x = view._m00_m10_m20;
+					float3 y = view._m02_m12_m22;
+				#endif
+				
+				#if defined(ROTATION)
+					float c = cos(i.rotation);
+					float s = sin(i.rotation);
+					float3 x_axis = x * c + y * s;
+					float3 y_axis = y * c - x * s;
+				#else
+					float3 x_axis = x;
+					float3 y_axis = y;
+				#endif
+				
+				#if defined(PIVOT)
+					float2 ci = i.corner_info;
+					float2 corner = ci * ( (1-(ci*0.5+0.5)) * i.size + ci * (i.pivot * i.size) );
+				#else					
+					float2 corner = i.corner_info * (i.size * 0.5);					
+				#endif
+
+				#if defined(SCREEN_SPACE)										
+					float3 wp = i.position.xzy + (x_axis * corner.x + y_axis * corner.y) / float3(camera_unprojection.xz, 1);
+				#else					
+					float3 wp = i.position.xyz + (x_axis * corner.x + y_axis * corner.y);
+				#endif
+				
+				#if defined(NEEDS_WORLD_POS)
+					o.wp = wp;				
+				#endif
+							
+				#if defined(SCREEN_SPACE)
+					float4 p = float4(wp, 1); //mul(float4(wp, 1), proj);
+				#else
+					float4 p = mul(float4(wp, 1), view_proj);
+				#endif
+				#if !defined(TESSELLATION)
+					o.position = p;
+				#endif
+				
+				#if defined(PARTICLE_LIGHTING)
+					#if defined(SCREEN_SPACE)
+						half3 n = view._m01_m11_m21;						
+					#else					
+						half3 n = normalize(lerp(wp - i.position.xyz, -view._m01_m11_m21, 0.3));						
+					#endif
+					n = mul(n, (float3x3)view);
+					
+					#if defined(TESSELLATION)
+						o.normal = n;
+					#else
+						float3 back_lighting;
+						calc_lighting(o.basis0, o.basis1, o.basis2, back_lighting, wp, n);
+						#if defined(BACK_LIGHTING)
+							o.back_lighting = back_lighting;
+						#endif
+					#endif
+				#endif
+				
+				#if defined(UV0)
+					float2 uv = (i.corner_info * float2(1,-1) * 0.5 + 0.5);
+					#if defined(UV_ANIMATION)
+						uv *= animation_frame_size;						
+						float n_frames = 1.f / animation_frame_size.x;
+						int frame_x = fmod(i.uv_frame, n_frames);
+						int frame_y = i.uv_frame / n_frames;
+						float2 offset = float2(frame_x * animation_frame_size.x, frame_y * animation_frame_size.y);
+						uv += offset;
+					#endif
+					
+					#if defined(GL2)
+						uv = float2(uv.x, 1-uv.y);
+					#endif					
+					
+					#if defined(UV_SCALE)
+						uv *= i.uv_scale;
+					#endif					
+					o.uv = uv;
+				#endif
+				
+				#if defined(VERTEX_COLOR)
+					o.color = decode_vertex_color(i.color);
+				#endif
+				
+				float clip_depth = 0;
+				float linear_depth = 0;
+				
+				#if defined(NEEDS_CLIP_DEPTH)
+					clip_depth = p.z + camera_near_far.x;
+				#endif
+				
+				#if defined(NEEDS_LINEAR_DEPTH)
+					#if defined(GL2)
+						linear_depth = linearize_depth(p.z*0.5 / p.w + 0.5);
+					#else
+						linear_depth = linearize_depth(p.z / p.w);
+					#endif
+				#endif
+				
+				#if defined(NEEDS_DEPTH)
+					o.depth = float2(clip_depth, linear_depth);
+				#endif
+				
+				#if defined(GBUFFER_PARTICLES)
+					float3 n = cross(x_axis, y_axis);
+					
+					#if defined(NORMAL_MAP)
+						float3 t = x_axis;
+						float3 b = y_axis;						
+						o.tsm0 = float3(t.x, b.x, n.x);
+						o.tsm1 = float3(t.y, b.y, n.y);
+						o.tsm2 = float3(t.z, b.z, n.z);
+					#else
+						o.normal = n;
+					#endif
+				#endif
+				
+				return o;
+			}			
+			
+			// Note: Alpha channel stored as sqrt(opacity) to preserve precision
+			float4 fast_gamma_to_linear(float4 c) {
+				return c * c;
+			}
+			
+			#if defined(GBUFFER_PARTICLES)
+				GBUFFER_OUT ps_main(PS_INPUT input)	{
+					GBUFFER_OUT o;
+					
+					#if defined(USE_DEPTH_RT)
+						DEPTH(o) = gbuffer_encode_depth(input.depth.y);
+					#endif
+					
+					#if defined(VERTEX_COLOR)
+						half4 vc = input.color;
+						vc = fast_gamma_to_linear(vc);
+					#endif
+					
+					half op = 1.f;
+					#ifdef DIFFUSE_MAP						
+						half4 dtex = tex2D(diffuse_map, input.uv);
+						half3 albedo = dtex.rgb;
+						op = dtex.a;
+					#else
+						half3 albedo = half3(0.6,0.6,0.6);
+					#endif
+					
+					#ifdef MATERIAL_MAP
+						half3 gsm = tex2D(material_map, input.uv).rgb;
+						half2 specular_glossiness = float2(gsm.g, gsm.r);
+						#ifdef ONE_BIT_ALPHA_FROM_MATERIAL_B
+							op = gsm.b;
+						#endif						
+					#else
+						half2 specular_glossiness = float2(specular, glossiness);
+					#endif									
+										
+					#if defined(ONE_BIT_ALPHA)
+						#if defined(DISSOLVE_USING_VERTEX_ALPHA)
+							one_bit_alpha_mask(op, 1-vc.a);
+						#else
+							one_bit_alpha_mask(op, ONE_BIT_ALPHA_REF);
+						#endif							
+					#endif						
+					
+					#if defined(VERTEX_COLOR)
+						albedo *= vc.rgb;
+					#endif					
+					
+					ALBEDO(o) = gbuffer_encode_albedo(albedo);
+					
+					half3 world_space_normal = float3(0,0,0);
+					#ifdef NORMAL_MAP  					
+						half3 tnormal = decode_normal_map(tex2D(normal_map, input.uv));
+						world_space_normal = rotate_vector3(tnormal, input.tsm0, input.tsm1, input.tsm2);
+					#else										
+						world_space_normal = normalize(input.normal);
+					#endif
+					
+					NORMAL(o) = gbuffer_encode_normal(world_space_normal);					
+					SPECULAR(o) = gbuffer_encode_specular_mask(specular_glossiness.x);
+					GLOSSINESS(o) = gbuffer_encode_glossiness(specular_glossiness.y);
+					
+					#ifdef SELF_ILLUMINATION_MAP
+						LIGHT_ACCUMULATION(o) = float4(0,0,0,0);
+					#endif
+					
+					GBUFFER_AUX(o) = half4(0, DEFAULT_MATERIAL, 0, 1);
+					
+					return o;
+				}
+			#elif defined(DISTORTION)
+				float4 ps_main(PS_INPUT input
+						#if defined(GCM)
+							, float4 wpos : WPOS
+						#elif defined(X360) || defined(GL2)
+							, float4 wpos : VPOS
+						#endif				
+					) : SV_TARGET0
+				{
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						half2 screen_uv = wpos.xy / back_buffer_size;
+					#else
+						half2 screen_uv = input.position.xy / back_buffer_size;				
+					#endif
+					
+					half4 normal = tex2D(normal_map, input.uv);
+					normal.rg = normal.rg * 2 - 1;
+					half2 distortion = normal.xy / back_buffer_size;
+					
+					half alpha = normal.a;
+					#if defined(VERTEX_COLOR)						
+						half4 vcol = fast_gamma_to_linear(input.color);
+						alpha *= vcol.a;						
+					#endif
+					#if defined(SOFT_PARTICLES)
+						#if defined(D3D11)
+							float d = gbuffer_decode_depth(depth.Load(int3(i.position.xy, 0)));
+						#elif defined(GCM) || defined(X360) || defined(GL2)							
+							float d = gbuffer_decode_depth(tex2D(depth, screen_uv));			
+						#endif
+						alpha *= saturate(abs(d - input.depth.x) / depth_fade_distance);
+					#endif
+					
+					distortion_strength *= alpha;					
+					half4 color = half4(tex2D(light_accumulation, screen_uv + (distortion * distortion_strength)).rgb, alpha);
+					
+					#if defined(VERTEX_COLOR)
+						color.rgb *= lerp(half3(1,1,1), vcol.rgb, alpha);
+					#endif
+					
+					return color;
+				}			
+			#elif defined(WIREFRAME)
+				float4 ps_main(PS_INPUT i) : SV_TARGET0 {
+					return float4(1,0,0,1);
+				}				
+			#else
+				#ifndef BLEND_ADDITIVE
+					#ifdef SCREEN_SPACE
+						static const half3 hl2_basis0 = half3(0, 								   0.57735026918962576450914878050196,  0.57735026918962576450914878050196);//half3(0, 1.f/sqrt(3.f), sqrt(2.f/3.f));
+						static const half3 hl2_basis1 = half3(0.70710678118654752440084436210485,  0.57735026918962576450914878050196, -0.40824829046386301636621401245098);//half3(1.f / sqrt(2.f), 1.f/sqrt(3.f), -(1.f/sqrt(6.f)));
+						static const half3 hl2_basis2 = half3(-0.70710678118654752440084436210485, 0.57735026918962576450914878050196, -0.40824829046386301636621401245098);//half3(-(1.f / sqrt(2.f)), 1.f/sqrt(3.f), -(1.f/sqrt(6.f)));					
+					#else
+						static const half3 hl2_basis0 = half3(0, -0.57735026918962576450914878050196, 0.57735026918962576450914878050196);//half3(0, -1.f/sqrt(3.f), sqrt(2.f/3.f));
+						static const half3 hl2_basis1 = half3(0.70710678118654752440084436210485, -0.57735026918962576450914878050196, -0.40824829046386301636621401245098);//half3(1.f / sqrt(2.f), -1.f/sqrt(3.f), -(1.f/sqrt(6.f)));
+						static const half3 hl2_basis2 = half3(-0.70710678118654752440084436210485, -0.57735026918962576450914878050196, -0.40824829046386301636621401245098);//half3(-(1.f / sqrt(2.f)), -1.f/sqrt(3.f), -(1.f/sqrt(6.f)));					
+					#endif
+				#endif
+			
+				float4 ps_main(PS_INPUT i
+					#if defined(SOFT_PARTICLES) 
+						#if defined(GCM)
+							, float4 wpos : WPOS
+						#elif defined(X360) || defined(GL2)
+							, float2 wpos : VPOS
+						#endif
+					#endif
+					) : SV_TARGET0 
+				{
+					#if defined(DIFFUSE_MAP)				
+						float4 c = tex2D(diffuse_map, i.uv);
+					#else
+						float4 c = float4(1,1,1,1);
+					#endif
+					
+					#if defined(VERTEX_COLOR)
+						float4 vc = i.color;
+						vc = fast_gamma_to_linear(vc);						
+						c *= vc;
+					#endif
+					
+					#if defined(SOFT_PARTICLES)
+						#if defined(D3D11)
+							float d = gbuffer_decode_depth(depth.Load(int3(i.position.xy, 0)));
+						#elif defined(GCM) || defined(X360) || defined(GL2)
+							half2 uv = wpos.xy / back_buffer_size;							
+							float d = gbuffer_decode_depth(tex2D(depth, uv));						
+						#endif
+						c.a *= saturate(abs(d - i.depth.x) / depth_fade_distance);
+					#endif					
+					
+					#if defined(PARTICLE_LIGHTING)						
+						half3 n = normalize(half3(i.basis0.w, i.basis1.w, i.basis2.w));
+						half3 weights = saturate(half3(dot(n, hl2_basis0), dot(n, hl2_basis1), dot(n, hl2_basis2)));												
+						half3 light = weights.x * i.basis0.xyz + weights.y * i.basis1.xyz + weights.z * i.basis2.xyz;
+						
+						half back_light_scale = saturate(1-(c.a*0.5+0.25));
+						back_light_scale *= back_light_scale;	
+						#if defined(BACK_LIGHTING)
+							light += i.back_lighting * back_light_scale;
+						#endif
+						c.rgb *= light;
+						c = apply_fog(c, i.wp, i.depth.x);
+					#else
+						c.rgb *= emissive_particle_intensity;
+					#endif					
+					
+					return c;
+				}			
+			#endif			
+		"""
+	}
+}
+
+shaders = {
+	billboard = {
+		editor_advanced_mode = true
+		
+		editor_options = [
+			{
+				name="Turn-up Algorithms"
+				options = [
+					{ name="Screen space" define="SCREEN_SPACE" }
+					{ name="Tangent Locked" define="TANGENT_LOCKED" }
+					{ name="External Rotation" define="EXTERNAL_ROTATION" }					
+				]
+			}
+			{
+				name="Vertex Modifiers"
+				options = [
+					{ name="Rotation" define="ROTATION" }
+	 				{ name="Pivot" define="PIVOT" }
+					{ name="UV Animation" define="UV_ANIMATION" }					
+					{ name="UV Scale" define="UV_SCALE" }
+				]
+			}
+			{
+				name="Pixel Modifiers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" }
+					{ name="Vertex Color" define="VERTEX_COLOR" }
+					{ name="Soft Particles" define="SOFT_PARTICLES" }
+					{ name="Distortion Particles" define="DISTORTION" }
+				]
+			}
+			{
+				name="Particle Lighting"
+				options = [
+					{ name="GBuffer Particles" define="LIT_PARTICLES" }
+					{ name="Normal Map" define="NORMAL_MAP" }
+					{ name="Material Map" define="MATERIAL_MAP" }
+					{ name="One Bit Alpha" define="ONE_BIT_ALPHA" }	
+					{ name="Dissolve Using Vertex Alpha" define="DISSOLVE_USING_VERTEX_ALPHA" }
+				]				
+			}
+			{
+				name="Blending"
+				options = [
+					{ name="Additive Blend" define="BLEND_ADDITIVE" }
+				]
+			}			
+		]
+		
+		contexts = {
+			shadow_caster = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+					
+					]
+					fail = [{
+						defined="BLEND_ADDITIVE"
+						pass = [
+						
+						]						
+						fail = [{							
+							defined="LIT_PARTICLES"
+							pass = [						
+								{ hlsl_shader="billboard_depth_only" defines="GBUFFER_PARTICLES" render_states="billboard_shadow_caster" }
+							]
+							fail = [
+								{ hlsl_shader="billboard_depth_only" render_states="billboard_shadow_caster" }
+							]
+						}]
+					}]
+				}]
+			}			
+			
+			default = {	
+				passes = [{ 
+					defined="MOBILE"
+					pass = [
+							{ layer="particle_transparent" hlsl_shader="mobile_billboard" render_states="billboard_opacity" }
+					]					
+					fail = [{	
+						defined="LIT_PARTICLES"
+						pass = [
+							{ layer="gbuffer" hlsl_shader="billboard" defines="GBUFFER_PARTICLES" render_states="gbuffer_material" }
+						]						
+						fail = [{
+							defined="DISTORTION"
+							pass = [
+								{ layer="hdr_transparent_distortion" hlsl_shader="billboard" render_states="billboard_opacity" }
+							]						
+							fail = [								
+								{ layer="hdr_transparent" hlsl_shader="billboard" render_states="billboard_opacity" }
+							]
+						}]
+					}]
+				}]				
+			}
+		}	
+		
+		compile = {
+			shadow_caster = [ 
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="HWSM" platforms = "D3D11 GCM X360 GL2"} 
+			] 						
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="LOCAL_LIGHTS SHADOW_RECEIVING TESSELLATION" render_caps={ feature_level="DX11_0" } render_settings={ particles_local_lighting = true particles_receive_shadows = true particles_tessellation = true} platforms="D3D11" }
+				{ defines="LOCAL_LIGHTS SHADOW_RECEIVING" render_settings={ particles_local_lighting = true particles_receive_shadows = true } platforms="D3D11" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	}
+}

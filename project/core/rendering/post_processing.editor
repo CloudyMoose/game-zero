@@ -1,0 +1,824 @@
+
+"#ID[01acb6a7daa82c0c]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "luminance_adaption"
+	variables = [
+		{
+			max = [
+				3
+				5
+				5
+			]
+			min = [
+				0.01
+				0.001
+				0.0015
+			]
+			name = "Luminance Adaption [speed, min, max]"
+			step = [
+				0.0001
+				0.0001
+				0.0001
+			]
+			type = "vector3"
+			value = [
+				0.6
+				0.075
+				1
+			]
+			variable = "adaption_settings"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Reset Adaption"
+			step = 1
+			type = "scalar"
+			value = 0
+			variable = "reset_adaption"
+		}
+	]
+}
+"#ID[12309eda7b28bd11]" = {
+	defines = "DIRECTION_Y"
+	semantics = [
+	]
+	shader = "nv_dof_tridiagonal_fill"
+	variables = [
+	]
+}
+"#ID[276e3f8026800855]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_Y"
+	semantics = [
+	]
+	shader = "dof"
+	variables = [
+	]
+}
+"#ID[2cc8a710ee8a47d7]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "vo_ssao"
+	variables = [
+		{
+			max = 1
+			min = 0.1
+			name = "SSAO Spread"
+			step = 0.0001
+			type = "scalar"
+			value = 0.4
+			variable = "ssao_radius"
+		}
+		{
+			max = 10
+			min = 0.1
+			name = "SSAO Depth Falloff"
+			step = 0.001
+			type = "scalar"
+			value = 1.5
+			variable = "max_distance"
+		}
+	]
+}
+"#ID[309591d138e0573b]" = {
+	defines = "LUMINANCE_ADAPTION"
+	semantics = [
+	]
+	shader = "tone_mapping"
+	variables = [
+		{
+			max = 5
+			min = 0
+			name = "Scene Exposure"
+			step = 0.001
+			type = "scalar"
+			value = 0.18
+			variable = "exposure"
+		}
+		{
+			max = [
+				1
+				1
+			]
+			min = [
+				0.2
+				0.1
+			]
+			name = "Bloom Threshold / Scale"
+			step = [
+				0.001
+				0.001
+			]
+			type = "vector2"
+			value = [
+				0.2
+				0.1
+			]
+			variable = "bright_pass_threshold_offset"
+		}
+	]
+}
+"#ID[36865123d2a2db9b]" = {
+	defines = "FILMIC LUMINANCE_ADAPTION"
+	semantics = [
+	]
+	shader = "tone_mapping"
+	variables = [
+		{
+			max = 5
+			min = 0
+			name = "Scene Exposure"
+			step = 0.001
+			type = "scalar"
+			value = 0.18
+			variable = "exposure"
+		}
+	]
+}
+"#ID[38e0890247d5c4e2]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_Y"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[39c4c5b8acac9828]" = {
+	defines = "ENCODE_AS_RGBM"
+	semantics = [
+	]
+	shader = "copy"
+	variables = [
+	]
+}
+"#ID[3bc192335f738e1c]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "blend"
+	variables = [
+	]
+}
+"#ID[427b0aee93e5690d]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "tone_mapping"
+	variables = [
+		{
+			max = 5
+			min = 0
+			name = "Scene Exposure"
+			step = 0.001
+			type = "scalar"
+			value = 0.18
+			variable = "exposure"
+		}
+		{
+			max = [
+				1
+				1
+			]
+			min = [
+				0.2
+				0.1
+			]
+			name = "Bloom Threshold / Scale"
+			step = [
+				0.001
+				0.001
+			]
+			type = "vector2"
+			value = [
+				0.2
+				0.1
+			]
+			variable = "bright_pass_threshold_offset"
+		}
+	]
+}
+"#ID[43228982ab63aa50]" = {
+	defines = "DEPTH_AWARE SEPARABLE_GAUSSIAN_13TAP_Y"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[4921a3f57d33022c]" = {
+	defines = "DIRECTION_Y ITER1"
+	semantics = [
+	]
+	shader = "nv_dof_pcr_step"
+	variables = [
+	]
+}
+"#ID[49a2bab9f04a738e]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "dof_apply"
+	variables = [
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Far Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				10
+				1
+			]
+			variable = "far"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Dof Amount"
+			step = 0.001
+			type = "scalar"
+			value = 1
+			variable = "amount"
+		}
+	]
+}
+"#ID[4a7f58339a77c149]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "depth_blur"
+	variables = [
+		{
+			max = [
+				800
+				50
+			]
+			min = [
+				0
+				0
+			]
+			name = "Far Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				10
+				1
+			]
+			variable = "far"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Dof Amount"
+			step = 0.001
+			type = "scalar"
+			value = 1
+			variable = "amount"
+		}
+	]
+}
+"#ID[4f8b2a1f9f41719d]" = {
+	defines = "DIRECTION_X ITER2"
+	semantics = [
+	]
+	shader = "nv_dof_pcr_step"
+	variables = [
+	]
+}
+"#ID[56c6534105bb1543]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "downscale_depth"
+	variables = [
+	]
+}
+"#ID[59c75728edeace8b]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "depth_fog"
+	variables = [
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Fog Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "fog_color"
+		}
+		{
+			max = [
+				1000
+				1000
+			]
+			min = [
+				0
+				0
+			]
+			name = "Depth Range (min/max)"
+			step = [
+				1
+				1
+			]
+			type = "vector2"
+			value = [
+				5
+				150
+			]
+			variable = "depth_range"
+		}
+		{
+			max = [
+				5
+				5
+				5
+			]
+			min = [
+				0
+				0
+				0
+			]
+			name = "Fog Color"
+			step = [
+				0.003
+				0.003
+				0.003
+			]
+			type = "vector3"
+			value = [
+				0.5
+				0.5
+				0.5
+			]
+			variable = "fog_color"
+		}
+		{
+			max = [
+				1
+				16
+				1
+			]
+			min = [
+				0
+				1
+				0
+			]
+			name = "Fog Sun Blend / Exponent / Strength"
+			step = [
+				0.001
+				0.01
+				0.001
+			]
+			type = "vector3"
+			value = [
+				1
+				8
+				1
+			]
+			variable = "sun_blend"
+		}
+	]
+}
+"#ID[60e7d68b9b06a034]" = {
+	defines = "DOWNSAMPLE_4x4"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[66a5e82b51e1a9fe]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "dof_initial_downsample"
+	variables = [
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Near Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				1
+				1
+			]
+			variable = "near"
+		}
+	]
+}
+"#ID[67e766e0754ee840]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_X"
+	semantics = [
+	]
+	shader = "dof"
+	variables = [
+	]
+}
+"#ID[75df21273ebecb13]" = {
+	defines = "DIRECTION_X ITER1"
+	semantics = [
+	]
+	shader = "nv_dof_pcr_step"
+	variables = [
+	]
+}
+"#ID[76c27b6c3d8095c0]" = {
+	defines = "LOG_LUMINANCE"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[7aa3e573c5c83b5c]" = {
+	defines = "SCREEN"
+	semantics = [
+	]
+	shader = "blend"
+	variables = [
+	]
+}
+"#ID[7bc038e9245f2df5]" = {
+	defines = "DIRECTION_X ITER3"
+	semantics = [
+	]
+	shader = "nv_dof_pcr_step"
+	variables = [
+	]
+}
+"#ID[7c1f55853844b4c0]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "nv_dof_compute_radius"
+	variables = [
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Near Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				1
+				1
+			]
+			variable = "near"
+		}
+		{
+			max = 20
+			min = 1
+			name = "Near Max CoC Radius"
+			step = 1
+			type = "scalar"
+			value = 10
+			variable = "near_max_coc"
+		}
+	]
+}
+"#ID[7d366950b2f7225a]" = {
+	defines = "DOWNSCALE_COC"
+	semantics = [
+	]
+	shader = "dof"
+	variables = [
+		{
+			max = 1
+			min = 0
+			name = "DoF Skydome Blur Factor"
+			step = 0.001
+			type = "scalar"
+			value = 0.5
+			variable = "skydome_blur"
+		}
+		{
+			max = 1
+			min = 0
+			name = "DoF Amount"
+			step = 0.001
+			type = "scalar"
+			value = 1
+			variable = "amount"
+		}
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Near Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				1
+				1
+			]
+			variable = "near"
+		}
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Far Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				10
+				1
+			]
+			variable = "far"
+		}
+	]
+}
+"#ID[8539b9944739e3c4]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_Y"
+	semantics = [
+	]
+	shader = "ssao_blur"
+	variables = [
+	]
+}
+"#ID[8e35434f7cab10f5]" = {
+	defines = "INTERLEAVE_BUFFER"
+	semantics = [
+	]
+	shader = "copy"
+	variables = [
+	]
+}
+"#ID[b70ac36bf1a82ff5]" = {
+	defines = "GAUSSIAN_BLUR_13TAP"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[b73cb78168e27b9e]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "dof_near_coc"
+	variables = [
+	]
+}
+"#ID[bbd3c99845e19fd8]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_X"
+	semantics = [
+	]
+	shader = "ssao_blur"
+	variables = [
+	]
+}
+"#ID[c00cf919ef18dc75]" = {
+	defines = "DIRECTION_Y"
+	semantics = [
+	]
+	shader = "nv_dof_sweep_pcr_vector"
+	variables = [
+	]
+}
+"#ID[c2245da1492b7531]" = {
+	defines = "DIRECTION_X"
+	semantics = [
+	]
+	shader = "nv_dof_sweep_pcr_vector"
+	variables = [
+	]
+}
+"#ID[c5ef731de0e5c0e9]" = {
+	defines = "DIRECTION_X"
+	semantics = [
+	]
+	shader = "nv_dof_tridiagonal_fill"
+	variables = [
+	]
+}
+"#ID[caa486ea2f50c6e0]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "ssao_upscale"
+	variables = [
+		{
+			max = 5
+			min = 0.5
+			name = "SSAO Strength"
+			step = 0.001
+			type = "scalar"
+			value = 2
+			variable = "ssao_strength"
+		}
+	]
+}
+"#ID[cc1515f1582ae20a]" = {
+	defines = "APPLY"
+	semantics = [
+	]
+	shader = "dof"
+	variables = [
+	]
+}
+"#ID[ccc06f6c3481f43e]" = {
+	defines = "BRIGHT_PASS FILMIC LUMINANCE_ADAPTION"
+	semantics = [
+	]
+	shader = "tone_mapping"
+	variables = [
+		{
+			max = 5
+			min = 0
+			name = "Scene Exposure"
+			step = 0.001
+			type = "scalar"
+			value = 0.18
+			variable = "exposure"
+		}
+	]
+}
+"#ID[d0e44e4220fcbe09]" = {
+	defines = "BOX"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[d5399bf801f25dfa]" = {
+	defines = "DEPTH_AWARE SEPARABLE_GAUSSIAN_13TAP_X"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[d996b7bdf040ea8b]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "copy"
+	variables = [
+	]
+}
+"#ID[d9f95bab15817e1c]" = {
+	defines = ""
+	semantics = [
+	]
+	shader = "nv_dof_compute_radius_far"
+	variables = [
+		{
+			max = [
+				200
+				10
+			]
+			min = [
+				0
+				0
+			]
+			name = "Far Focus (distance/fade)"
+			step = [
+				0.1
+				0.1
+			]
+			type = "vector2"
+			value = [
+				10
+				1
+			]
+			variable = "far"
+		}
+		{
+			max = 20
+			min = 1
+			name = "Far Max CoC Radius"
+			step = 1
+			type = "scalar"
+			value = 10
+			variable = "fax_max_coc"
+		}
+		{
+			max = 1
+			min = 0
+			name = "Dof Amount"
+			step = 0.001
+			type = "scalar"
+			value = 1
+			variable = "amount"
+		}
+	]
+}
+"#ID[f2f6f5c0c2d5efb5]" = {
+	defines = "SEPARABLE_GAUSSIAN_13TAP_X"
+	semantics = [
+	]
+	shader = "filter"
+	variables = [
+	]
+}
+"#ID[f3c26338059c6bbe]" = {
+	defines = "COLOR_GRADING FILMIC LUMINANCE_ADAPTION VIGNETTE"
+	semantics = [
+	]
+	shader = "tone_mapping"
+	variables = [
+		{
+			max = 5
+			min = 0
+			name = "Scene Exposure"
+			step = 0.001
+			type = "scalar"
+			value = 0.18
+			variable = "exposure"
+		}
+		{
+			max = [
+				10
+				10
+				1
+			]
+			min = [
+				0
+				0.1
+				0
+			]
+			name = "Vignette Strength"
+			step = [
+				0.001
+				0.001
+				0.001
+			]
+			type = "vector3"
+			value = [
+				3
+				2.5
+				1
+			]
+			variable = "scale_falloff_opacity"
+		}
+	]
+}

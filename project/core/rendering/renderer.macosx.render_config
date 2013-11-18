@@ -1,0 +1,361 @@
+// ---------------------------------------------------------------------------------------------------
+// Configures render settings
+
+osx_caps = {	
+	feature_level = ""
+	use_deferred_contexts = false
+	nv_stereo = false
+	tessellation_enabled = true	
+	emulate_mobile = false
+}
+
+render_settings = {
+	particles_local_lighting = true
+	particles_receive_shadows = true	
+	particles_tessellation = true
+	particles_cast_shadows = false
+	
+	lighting = true
+	g_tessellation = 1
+	g_tessellation_tri_size = 8
+	g_tessellation_detail = 1
+	shadow_map_size = [ 1024, 1024 ]
+	fxaa_enabled = true
+	ssao_enabled = true
+	generate_cubemap = false
+	
+	debug_rendering = false
+	gbuffer_albedo_visualization = false
+	gbuffer_albedo_luminance_visualization = false
+	gbuffer_normal_visualization = false
+	gbuffer_specular_visualization = false
+	gbuffer_glossiness_visualization = false
+	gbuffer_shadow_mask_visualization = false
+	gbuffer_fill_albedo = false	
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Setup predefined shader pass flags, all flags prefixed with dev_ are used by the tools
+
+shader_pass_flags = [
+	"dev_wireframe"
+]
+
+// ---------------------------------------------------------------------------------------------------
+// Specifies which shader libraries to load at boot up.
+
+shader_libraries = [
+	"core/rendering/post_processing"
+	"core/rendering/default_shaders"	
+	"core/rendering/deferred_shading"
+	"core/rendering/base"
+	"core/rendering/particle_billboard"
+	"core/rendering/decals"
+	"core/rendering/fxaa"
+	"core/rendering/landscape"
+]	
+
+// ---------------------------------------------------------------------------------------------------
+// Specifies global resources to allocate at start up
+
+global_resources = [
+	{ name = "depth_stencil_buffer" type="render_target" depends_on = "back_buffer" w_scale=1 h_scale=1 format="DEPTH_STENCIL" hint_needs_clearing = true }
+	{ name = "albedo" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "R8G8B8A8" hint_needs_clearing = false }
+	{ name = "normal" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "R8G8B8A8" hint_needs_clearing = false }
+	{ name = "depth" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "R32F" hint_needs_clearing = false }	
+	{ name = "mask" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "R8G8B8A8" hint_needs_clearing = true }
+	{ name = "light_accumulation" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "HDR_ACCUMULATION" hint_needs_clearing = true } 
+	{ name = "self_illumination" type="render_target" depends_on = "back_buffer" w_scale = 1 h_scale = 1 format = "R8G8B8A8" hint_needs_clearing = true } 
+	
+	//{ name = "shadow_map" type="render_target" width=4096 height=4096 format="SHADOW_MAP" hint_needs_clearing = false }
+	{ name = "shadow_map" type="render_target" size_from_render_setting="shadow_map_size" format="SHADOW_MAP" hint_needs_clearing = false }
+	//{ name = "shadow_map_cube" type="render_target" image_type="image_cube" width=1024 height=1024 format="SHADOW_MAP" hint_needs_clearing = false}		
+	{ name = "hdr_downscale_one_fourth0" type="render_target" depends_on = "back_buffer" w_scale = 0.25 h_scale = 0.25 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_fourth1" type="render_target" depends_on = "back_buffer" w_scale = 0.25 h_scale = 0.25 format = "HDR_ACCUMULATION" hint_needs_clearing = false }	
+	{ name = "hdr_downscale_one_sixteenth0" type="render_target" depends_on = "back_buffer" w_scale = 0.0625 h_scale = 0.0625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_sixteenth1" type="render_target" depends_on = "back_buffer" w_scale = 0.0625 h_scale = 0.0625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_sixtyforth0" type="render_target" depends_on = "back_buffer" w_scale = 0.015625 h_scale = 0.015625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_sixtyforth1" type="render_target" depends_on = "back_buffer" w_scale = 0.015625 h_scale = 0.015625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_twohundredfiftysixth0" type="render_target" depends_on = "back_buffer" w_scale = 0.00390625 h_scale = 0.00390625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	{ name = "hdr_downscale_one_twohundredfiftysixth1" type="render_target" depends_on = "back_buffer" w_scale = 0.00390625 h_scale = 0.00390625 format = "HDR_ACCUMULATION" hint_needs_clearing = false }
+	
+	{ name = "downscale_one_fourth0" type="render_target" depends_on = "back_buffer" w_scale = 0.25 h_scale = 0.25 format = "R8G8B8A8" hint_needs_clearing = false }
+	{ name = "downscale_one_fourth1" type="render_target" depends_on = "back_buffer" w_scale = 0.25 h_scale = 0.25 format = "R8G8B8A8" hint_needs_clearing = false }	
+	{ name = "downscale_one_fourth2" type="render_target" depends_on = "back_buffer" w_scale = 0.25 h_scale = 0.25 format = "R8G8B8A8" hint_needs_clearing = false }
+	
+	{ name = "vo_rotation" type="texture" resource="core/rendering/vo_rotation" }
+	{ name = "nft" type="texture" resource="core/rendering/nft" }
+	
+	{ name = "depth_downscale_half" type="render_target" depends_on = "back_buffer" w_scale = 0.5 h_scale = 0.5 format = "R32F" hint_needs_clearing = false}
+	{ name = "downscale_half0" type="render_target" depends_on = "back_buffer" w_scale = 0.5 h_scale = 0.5 format = "R8G8B8A8" hint_needs_clearing = false}
+	{ name = "downscale_half1" type="render_target" depends_on = "back_buffer" w_scale = 0.5 h_scale = 0.5 format = "R8G8B8A8" hint_needs_clearing = false}
+]
+
+// ---------------------------------------------------------------------------------------------------
+// Layer configurations
+
+layer_configs = {
+	default = [
+		/// Some Radeon GPUS on >= OSX 10.8 have will trash DST data when sampling depth or blitting the surface.
+		/// Until these issues are fixed by the IHVs/Apple the default OS X render pipe will use the USE_DEPTH_RT path,
+		/// which writes linear depth during gbuffer population.
+
+		{ name = "depth_prepass" render_targets="albedo" depth_stencil_target="depth_stencil_buffer" sort="FRONT_BACK" }
+		{ name = "gbuffer" render_targets="albedo normal mask depth" depth_stencil_target="depth_stencil_buffer" sort="FRONT_BACK" profiling_scope="gbuffer"}
+		{ name = "gbuffer_alpha_masked" render_targets="albedo normal mask depth" depth_stencil_target="depth_stencil_buffer" sort="FRONT_BACK" profiling_scope="gbuffer_alpha_masked"}
+		{ name = "gbuffer_self_illumination" render_targets="albedo normal mask self_illumination depth" depth_stencil_target="depth_stencil_buffer" sort="FRONT_BACK" profiling_scope="gbuffer"}
+		
+		{ name = "decal_albedo" render_targets="albedo" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="decal"}
+		
+		{ name = "debug_pre_lighting_visualization" resource_generator = "debug_pre_lighting_visualization" }
+		{ name = "deferred_shading" resource_generator = "deferred_shading" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" profiling_scope="lighting&shadows" }
+		{ name = "debug_visualization" resource_generator = "debug_visualization" }
+
+		{ name = "skydome" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="skydome" }
+		{ name = "reflections" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="reflections" }
+		{ name = "fog_volumes" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="fog" }
+		{ name = "fog_apply" resource_generator = "fog_apply" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" profiling_scope="fog" }
+		{ name = "water" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="water" max_resolve_count=1}
+		{ name = "semi_transparency" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="semi_transparency" max_resolve_count=1}
+		{ name = "hdr_transparent" render_targets="light_accumulation" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+		
+		{ name = "tone_mapping" resource_generator = "tone_mapping" profiling_scope="tone_mapping" }
+		{ name = "post_processing" resource_generator = "post_processing" profiling_scope="post_processing" }
+		
+		{ name = "fxaa" resource_generator = "fxaa" render_targets="albedo" depth_stencil_target="depth_stencil_buffer" profiling_scope="fxaa" }
+
+		{ name = "wireframe" render_targets="albedo" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" }
+		{ name = "transparent" render_targets="albedo" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+		
+		{ name = "blit" resource_generator = "blit" }
+		{ name = "debug_fill_albedo" resource_generator = "debug_fill_albedo" }
+	]
+	overlay = [	
+		{ name = "transparent" render_targets="back_buffer" sort="BACK_FRONT" profiling_scope="overlay_transparent"}
+	]
+}
+
+// ---------------------------------------------------------------------------------------------------
+// resource effects
+
+resource_generators = {
+	blit = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="copy" input = "albedo" output = "back_buffer" }
+		]
+	}
+	
+	landscape_undergrowth = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="landscape_undergrowth" input="hmap material_map" output="buffer0 buffer1" }
+		]
+	}
+	
+	fxaa = {
+		modifiers = [			
+			{ type = "dynamic_branch" render_settings={ fxaa_enabled=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="fxaa" depth_stencil_target="depth_stencil_buffer" input="albedo" output="albedo" }	
+				]
+			}					
+		]
+	}
+
+	debug_visualization = {
+		modifiers = [
+			{ type = "dynamic_branch" render_settings={ gbuffer_albedo_visualization=true } 
+				pass_modifiers = [
+					// passthrough, will be the default when debug_rendering = true
+				]
+			}	
+			{ type = "dynamic_branch" render_settings={ gbuffer_albedo_luminance_visualization=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:LUMINANCE" input="albedo" output="albedo" }
+				]
+			}			
+			{ type = "dynamic_branch" render_settings={ gbuffer_normal_visualization=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug" input="normal" output="albedo" }
+				]
+			}			
+			{ type = "dynamic_branch" render_settings={ gbuffer_specular_visualization=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:ALPHA_TO_RGB" input="albedo" output="albedo" }
+				]
+			}			
+			{ type = "dynamic_branch" render_settings={ gbuffer_glossiness_visualization=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:ALPHA_TO_RGB" input="normal" output="albedo" }
+				]
+			}
+			{ type = "dynamic_branch" render_settings={ gbuffer_shadow_mask_visualization=true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:SHADOW_MASK" input="mask" output="albedo" }
+				]
+			}
+			{ type = "dynamic_branch" type = "dynamic_branch" render_settings={ debug_rendering = true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:FILL_UNTOUCHED_PIXELS" output="back_buffer" depth_stencil_target="depth_stencil_buffer" }
+				]			
+			}			
+		]
+	}
+	
+	debug_pre_lighting_visualization = {
+		modifiers = [
+			{ type = "dynamic_branch" type = "dynamic_branch" render_settings={ gbuffer_fill_albedo = true } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" shader="gbuffer_debug:FILL_ALBEDO" input="albedo" output="albedo" }
+				]
+			}
+		]
+	}
+	
+	debug_fill_albedo = {
+		modifiers = [
+			{ type = "fullscreen_pass" shader="copy" input = "light_accumulation" output = "albedo" }
+		]
+	}
+
+	linearize_depth = {	
+		modifiers = [		
+			// Depth linearization
+			{ type="fullscreen_pass" shader="linearize_depth" input="depth_stencil_buffer" output="depth" }
+		]
+	}
+
+	fog_apply = {
+		modifiers = [
+			{ type = "fullscreen_pass" material="fog" output="light_accumulation" depth_stencil_target="depth_stencil_buffer" }
+		] 
+	}
+	
+	tone_mapping = {
+		modifiers = [
+			{ type = "dynamic_branch" render_settings={ debug_rendering=false } 
+				pass_modifiers = [
+					{ type = "fullscreen_pass" material="tone_mapping" input="light_accumulation" output="albedo normal" }
+				]
+			}
+		]		
+	}
+
+	deferred_shading = {
+		modifiers = [
+			// SSAO - Volumetric Obscurance
+			{ type = "dynamic_branch" render_settings={ ssao_enabled=true } profiling_scope="ssao" 
+				pass_modifiers = [
+					{ type="fullscreen_pass" shader="downscale_depth" input="depth" output="depth_downscale_half" profiling_scope="depth_downscale"}
+					{ type="fullscreen_pass" material="vo_ssao" input="depth_downscale_half" output="downscale_half0" profiling_scope="ssao_kernel" }
+					{ type="fullscreen_pass" shader="ssao_blur:SEPARABLE_GAUSSIAN_13TAP_X" input="downscale_half0" output="downscale_half1" profiling_scope="blur_x"}
+					{ type="fullscreen_pass" shader="ssao_blur:SEPARABLE_GAUSSIAN_13TAP_Y" input="downscale_half1" output="downscale_half0" profiling_scope="blur_y"}					
+					{ type="fullscreen_pass" material="ssao_upscale" input="downscale_half0" output="mask" profiling_scope="upscale"}
+				]
+			}
+			
+			// Cascaded shadow mapping for sun
+			{ type = "loop" count_variable="shadow_slice_depth_ranges" 
+				indexed_variables = [
+					{
+						source_array = "shadow_slice_depth_ranges"
+						variable = "shadow_slice_depth_range"
+					}					
+				]
+				
+				modifiers = [
+					{ type = "cascaded_shadow_mapping" light_direction="global_lighting:sun_direction" profiling_scope="shadow_casters"
+						slices = [
+							{ depth_range="shadow_slice_depth_range" viewport=[0 0 1 1] output="shadow_map" cutter_material="shadow_cutter_slice0" mask_material="global_shadow_mask_slice0" expose_world_to_shadow="sun_world_to_shadow" }
+						]
+					}			
+					{ type = "mesh_renderer" material="shadow_cutter_slice0" unit_resource="core/rendering/light_proxies" mesh="g_box" depth_stencil_target="depth_stencil_buffer" }
+					{ type = "fullscreen_pass" material="global_shadow_mask_slice0" depth_stencil_target="depth_stencil_buffer" output="mask" }
+				]
+			}
+			{ type = "fullscreen_pass" material="global_shadow_mask_fill" depth_stencil_target="depth_stencil_buffer" output="mask" }
+		
+			// Lighting
+		
+			// Default material (blinn phong)
+			{ type = "fullscreen_pass" material="global_lighting" depth_stencil_target="depth_stencil_buffer" output="light_accumulation" }
+			
+			// Default material (blinn phong) - local lights 
+			{ 
+				type = "dynamic_branch" render_settings={ lighting=true } profiling_scope="deferred_lighting"
+				pass_modifiers = [				
+					{ 
+						type = "deferred_shading" output="light_accumulation" depth_stencil_target="depth_stencil_buffer" proxy_geometry="core/rendering/light_proxies" 	
+						light_types = [
+							{ type = "omni" shader = "omni_light" proxy_mesh = "g_omni" }
+							{ type = "spot" shader = "spot_light" proxy_mesh = "g_spot" }
+						]
+					}
+				] 
+			}
+		]
+	}
+	
+	post_processing = {
+		modifiers = [
+			{ type = "dynamic_branch" render_settings={ debug_rendering=false } 
+				pass_modifiers = [
+					// Bloom
+					{ type = "fullscreen_pass" shader="filter:DOWNSAMPLE_4x4" input="normal" output="hdr_downscale_one_fourth0" }			
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_X" input="hdr_downscale_one_fourth0" output="hdr_downscale_one_fourth1" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_Y" input="hdr_downscale_one_fourth1" output="hdr_downscale_one_fourth0" }
+
+					{ type = "fullscreen_pass" shader="filter:DOWNSAMPLE_4x4" input="hdr_downscale_one_fourth0" output="hdr_downscale_one_sixteenth0" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_X" input="hdr_downscale_one_sixteenth0" output="hdr_downscale_one_sixteenth1" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_Y" input="hdr_downscale_one_sixteenth1" output="hdr_downscale_one_sixteenth0" }
+
+					{ type = "fullscreen_pass" shader="filter:DOWNSAMPLE_4x4" input="hdr_downscale_one_sixteenth0" output="hdr_downscale_one_sixtyforth0" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_X" input="hdr_downscale_one_sixtyforth0" output="hdr_downscale_one_sixtyforth1" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_Y" input="hdr_downscale_one_sixtyforth1" output="hdr_downscale_one_sixtyforth0" }
+
+					{ type = "fullscreen_pass" shader="filter:DOWNSAMPLE_4x4" input="hdr_downscale_one_sixtyforth0" output="hdr_downscale_one_twohundredfiftysixth0" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_X" input="hdr_downscale_one_twohundredfiftysixth0" output="hdr_downscale_one_twohundredfiftysixth1" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_Y" input="hdr_downscale_one_twohundredfiftysixth1" output="hdr_downscale_one_twohundredfiftysixth0" }
+					
+					{ type = "fullscreen_pass" shader="blend" input="hdr_downscale_one_twohundredfiftysixth0 hdr_downscale_one_sixtyforth0" output="hdr_downscale_one_sixtyforth1" }
+					{ type = "fullscreen_pass" shader="blend" input="hdr_downscale_one_sixtyforth1 hdr_downscale_one_sixteenth0" output="hdr_downscale_one_sixteenth1" }
+					{ type = "fullscreen_pass" shader="blend" input="hdr_downscale_one_sixteenth1 hdr_downscale_one_fourth0" output="hdr_downscale_one_fourth1" }
+
+					{ type = "fullscreen_pass" shader="blend" input="albedo hdr_downscale_one_fourth1" output="normal" }			
+					
+					// Depth of Field
+					{ type = "fullscreen_pass" material="dof_near" input="normal" output="downscale_one_fourth0" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_X" input="downscale_one_fourth0" output="downscale_one_fourth1" }
+					{ type = "fullscreen_pass" shader="filter:SEPARABLE_GAUSSIAN_13TAP_Y" input="downscale_one_fourth1" output="downscale_one_fourth2" }
+					{ type = "fullscreen_pass" shader="dof_near_coc" input="downscale_one_fourth0 downscale_one_fourth2" output="downscale_one_fourth1" }			
+					{ type = "fullscreen_pass" shader="filter:BOX" input="downscale_one_fourth1" output="downscale_one_fourth0" }			
+					{ type = "fullscreen_pass" material="dof_far" input="normal downscale_one_fourth0 downscale_one_fourth2" output="albedo" }
+				]
+			}
+		] 
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------
+
+viewports = {
+	default = {
+		// resources instanced once per viewport
+		resources = [
+		]
+		
+		layer_config = "default"
+		output_rt = "albedo"
+		output_dst = "depth_stencil_target"
+	}
+	overlay = {
+		// resources instanced once per viewport
+		resources = [			
+		]
+		
+		layer_config = "overlay"
+		output_rt = "albedo"
+		output_dst = "depth_stencil_target"
+	}
+}
+
+default_shading_environment = "core/rendering/default_outdoor"

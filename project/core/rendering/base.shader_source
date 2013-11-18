@@ -1,0 +1,2919 @@
+// in this context include refers to another shader file
+includes = [ "core/rendering/common.shader_source", "core/rendering/base_dx11.shader_source", "core/rendering/base_mobile.shader_source", "core/rendering/base_voxelizer.shader_source" ] 
+
+render_states = { 		
+	wireframe = {
+		inherits = "opacity"
+		states = {
+			fill_mode = "fill_wireframe"	
+			z_write_enable = "true"
+			z_func = "less"
+			defined_D3D11 = {
+				depth_bias = "-1"
+				depth_bias_clamp = "-0.00015"
+				slope_scale_depth_bias = "-2.0"
+			}			
+		}		
+	}	
+	
+	ambient_no_depth_write = {
+		inherits = "ambient"
+		states = {
+			z_write_enable = "false"
+		}
+	}
+	
+	depth_only = {
+		inherits = "default"
+		states = {
+			write_mask0 = "0x0"
+			write_mask1 = "0x0"
+			write_mask2 = "0x0"
+			write_mask3 = "0x0"
+		}
+	}	
+	
+	shadow_caster = {
+		inherits = "depth_only"
+		states = {
+			defined_D3D11 = {
+				depth_bias = "0xff"			
+				slope_scale_depth_bias = "1.0"		
+			}
+			defined_GCM = {
+				offset_units = "5.0"
+				offset_factor = "1.0"
+			}
+			defined_GL2 = {
+				offset_units = "255.0"
+				offset_factor = "2.0"
+				depth_bias_enable = "true"
+			}
+			defined_X360 = {
+				depth_bias = "0.0002"  
+				slope_scale_depth_bias = "2.5"	
+			}
+		}
+	}		
+	
+	gbuffer_double_sided = {
+		inherits = "default"
+		states = {
+			cull_mode = "cull_none"
+		}
+	}
+
+	gbuffer_ambient_zequal_add = {
+		inherits = "default"
+		states = {
+			z_func = "equal" 
+			blend_enable = "true"
+			blend_op = "blend_op_add"
+			dest_blend = "blend_one"
+			src_blend = "blend_one"			
+		}
+	}
+
+	water_mask = {
+		inherits = "ambient"
+		states = {			
+			defined_ALWAYS = {
+				z_enable="false"
+			}
+			ndefined_ALWAYS = {
+				z_write_enable="false"
+			}
+			write_mask0 = "alpha"	
+			cull_mode = "cull_none"
+		}
+	}	
+	
+	fog_plane = {
+		inherits = "opacity"
+		states = {
+			defined_INVERTED = {
+				z_func = "greater"
+			}
+		}
+	}	
+	
+	pvs_bake = {
+		inherits = "ambient"
+		states = {
+			defined_DOUBLE_SIDED = {
+				cull_mode = "cull_none"
+			}
+			ndefined_DOUBLE_SIDED = {
+				cull_mode = "cull_ccw"
+			}
+		}
+	}
+	
+	pvs_bake_no_depth_write = {
+		inherits = "pvs_bake"
+		states = {
+			z_write_enable = "false"
+		}
+	}
+	
+	ao_bake = {
+		inherits = "ambient"
+		states = {			
+			cull_mode = "cull_none"
+		}
+	}	
+}  
+
+hlsl_shaders = {
+	vegetation_bending = {
+		code="""
+			#if defined(VEGETATION_BENDING) && !defined(OES2)
+				// Vegetation vertex animation (based on GPUGems 3 chapter by Tiago Sousa / Crytek)
+				CBUFFER_START(c_vegetation_bending)
+					float speed; // exports = { name="Vegetation Speed" type="scalar" value=0.5 min=0.0 max=10 step=0.001 }				
+					float2 branch_settings; // exports = { name="Branch Bending Amplitude / Frequency" type="vector2" min=[0 0] max=[10 2] step=[0.01 0.001] value=[0.3 0.1] }
+					float2 detail_settings; // exports = { name="Detail Bending Amplitude / Frequency" type="vector2" min=[0 0] max=[1 5] step=[0.001 0.001] value=[0.05 0.5] }
+				CBUFFER_END
+							
+				// sine waves approximation by smoothing a number of triangle waves using bicubic interpolation.
+				float4 smooth_curve( float4 x ) {
+					return x * x * (3.0 - 2.0 * x);
+				}
+				
+				float4 triangle_wave( float4 x ) {
+					return abs(frac(x + 0.5) * 2.0 - 1.0);
+				}
+				
+				float4 smooth_triangle_wave( float4 x ) {
+					return smooth_curve(triangle_wave(x));
+				}				
+				
+				static const float4 freq = float4(1.975, 0.793, 0.375, 0.193);
+				float4 vegetation_bending(float3 opos, float4 wpos, float3 vnormal, float4 vdata, float4 vpos) {									
+					float detail_amp = detail_settings.x;
+					float detail_freq = detail_settings.y;
+					
+					float branch_amp = branch_settings.x;
+					float branch_freq = branch_settings.y;				
+					
+					float edge_attenuation = vdata.x * vdata.z;
+					float branch_phase = vdata.y * 2 - 1;
+					float branch_attenuation = vdata.z;
+				
+					float obj_phase = dot(opos, 1);					
+					//float detail_phase = branch_phase;
+					//branch_phase += obj_phase;
+					float detail_phase = dot(vpos.xyz, branch_phase);					
+					
+					float2 waves_in = time + float2(detail_phase, branch_phase);
+					
+					float4 waves = (frac(waves_in.xyxy * freq * float2(detail_freq, branch_freq).xyxy * speed) * 2.0 - 1.0);				
+					waves = smooth_triangle_wave(waves);
+					
+					float2 waves_sum = (waves.xz + waves.yw);
+					return float4(wpos.xyz + waves_sum.xxy * float3(edge_attenuation * detail_amp * vnormal.xy, branch_attenuation * branch_amp), wpos.w);
+				}
+			#endif
+		"""
+	}
+	
+	uv_management = {
+		code="""
+			#if defined(DIFFUSE_MAP) || defined(NORMAL_MAP) || defined(MATERIAL_MAP) || defined(SELF_ILLUMINATION_MAP) || defined(AMBIENT_OCCLUSION_MAP) || defined(SUBSURFACE_SCATTERING_MAP)
+				#define HAS_UV
+				
+				#if defined(DIFFUSE_UV_ANIM) || defined(NORMAL_UV_ANIM) || defined(SELF_ILLUMINATION_UV_ANIM) || defined(MATERIAL_UV_ANIM)
+					#define UV_ANIM
+				#endif
+				#if defined(DIFFUSE_UV_OFFSET) || defined(NORMAL_UV_OFFSET) || defined(SELF_ILLUMINATION_UV_OFFSET) || defined(MATERIAL_UV_OFFSET)
+					#define UV_OFFSET
+				#endif				
+				#if defined(DIFFUSE_UV_ROTATION_ANIM) || defined(SELF_ILLUMINATION_UV_ROTATION_ANIM) || defined(MATERIAL_UV_ROTATION)
+					#define UV_ROTATION_ANIM
+				#endif
+				
+				#if defined(UV_ANIM) || defined(UV_OFFSET) || defined(UV_ROTATION_ANIM)
+					CBUFFER_START(c_uv_manipulation)
+						#ifdef UV_ANIM
+							float2 uv_speed; // exports={ name="UV Speed" type="vector2" value=[0.1 0.1] min=[-10.0 -10.0] max=[10.0 10.0] step=[0.001 0.001] }
+						#endif
+						#ifdef UV_OFFSET
+							float2 uv_offset;  // exports={ name="UV Offset" type="vector2" value=[0.0 0.0] min=[0.0 0.0] max=[10.0 10.0] step=[0.001 0.001] } 
+						#endif						
+						#ifdef UV_ROTATION_ANIM
+							float2 uv_rotation_pivot;   // exports={ name="UV Rotation Pivot" type="vector2" value=[0.5 0.5] min=[-1.0 -1.0] max=[1.0 1.0] step=[0.001 0.001] } 
+							float2 uv_rotation_speed;   // exports={ name="UV Rotation Speed" type="scalar" value=1.57 min=-6.28 max=6.28 step=0.001 } 							
+						#endif
+					CBUFFER_END
+				#endif
+				
+				float2 uv_pass_through_modifier(float2 uv) {
+					return uv;
+				}
+				#if defined(UV_OFFSET)
+					float2 uv_offset_modifier(float2 uv) {
+						#if defined(GL2)
+							return uv + float2(uv_offset.x, -uv_offset.y);
+						#else
+							return uv + uv_offset;
+						#endif
+					}
+				#endif
+				#if defined(UV_ANIM)
+					float2 uv_anim_modifier(float2 uv) {
+						#if defined(GL2)
+							return uv + float2(uv_speed.x, -uv_speed.y) * time;
+						#else
+							return uv + uv_speed * time;
+						#endif
+					}
+				#endif
+				#if defined(UV_ROTATION_ANIM)
+					float2 uv_rotation_anim_modifier(float2 uv) {
+						float a = uv_rotation_speed * time;
+						float c = cos(a); 
+						float s = sin(a); 
+						float2 center = uv - uv_rotation_pivot;
+						float2 result = float2(	(center.x * c + center.y * s) + uv_rotation_pivot.x,
+												(center.y * c - center.x * s) + uv_rotation_pivot.y);
+						#if defined(GL2)
+							return float2(result.x, -result.y);
+						#else
+							return result;
+						#endif
+					}
+				#endif
+				
+				#if defined(DIFFUSE_UV_ANIM)
+					#define diffuse_uv_modifier uv_anim_modifier
+				#elif defined(DIFFUSE_UV_OFFSET)
+					#define diffuse_uv_modifier uv_offset_modifier
+				#elif defined(DIFFUSE_UV_ROTATION_ANIM)
+					#define diffuse_uv_modifier uv_rotation_anim_modifier
+				#else
+					#define diffuse_uv_modifier uv_pass_through_modifier
+				#endif
+
+				#if defined(NORMAL_UV_ANIM)
+					#define normal_uv_modifier uv_anim_modifier
+				#elif defined(NORMAL_UV_OFFSET)
+					#define normal_uv_modifier uv_offset_modifier
+				//#elif defined(NORMAL_UV_ROTATION_ANIM) -- supporting uv rotation for normal channel forces us to rotate the tangent space as well..
+				//	#define normal_uv_modifier uv_rotation_anim_modifier
+				#else
+					#define normal_uv_modifier uv_pass_through_modifier
+				#endif
+				
+				#if defined(SELF_ILLUMINATION_UV_ANIM)
+					#define self_illumination_uv_modifier uv_anim_modifier
+				#elif defined(SELF_ILLUMINATION_UV_OFFSET)
+					#define self_illumination_uv_modifier uv_offset_modifier
+				#elif defined(SELF_ILLUMINATION_UV_ROTATION_ANIM)
+					#define self_illumination_uv_modifier uv_rotation_anim_modifier
+				#else
+					#define self_illumination_uv_modifier uv_pass_through_modifier
+				#endif			
+				
+				#if defined(MATERIAL_UV_ANIM)
+					#define material_uv_modifier uv_anim_modifier
+				#elif defined(MATERIAL_UV_OFFSET)
+					#define material_uv_modifier uv_offset_modifier
+				#elif defined(MATERIAL_UV_ROTATION_ANIM)
+					#define material_uv_modifier uv_rotation_anim_modifier
+				#else
+					#define material_uv_modifier uv_pass_through_modifier
+				#endif				
+			#endif			
+		"""
+	}
+	
+	gbuffer_base = {		
+		includes = [ "common", "gbuffer_access", "skinning", "vegetation_bending", "uv_management" ]	
+		 
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }				
+			}
+			defined_NORMAL_MAP = {
+				normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_MATERIAL_MAP = {
+				material_map = { sampler_states = "wrap_anisotropic_srgb" }	
+			}
+			defined_SELF_ILLUMINATION_MAP = {
+				self_illumination_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}			
+			
+			defined_MASKED_VC_BLEND = {
+				blend_diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }
+				blend_material_map = { sampler_states = "wrap_anisotropic_srgb" }
+				defined_NORMAL_MAP = {
+					blend_normal_map = { sampler_states = "wrap_anisotropic" }	
+				}
+			}
+			
+			defined_DETAIL_DIFFUSE_MAP = {
+				detail_diffuse_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_DETAIL_MATERIAL_MAP = {
+				detail_material_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_DETAIL_NORMAL_MAP = {
+				detail_normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			
+			defined_HIQUALITY_GBUFFER_NORMALS = {
+				nft = { sampler_states = "clamp_point" }
+			}
+			
+			defined_AMBIENT_OCCLUSION_MAP = {
+				ambient_occlusion_map = { sampler_states = "wrap_anisotropic" }
+			}
+			
+			defined_SUBSURFACE_SCATTERING_MAP = {
+				subsurface_scattering_map = { sampler_states = "wrap_anisotropic" }
+			}
+			defined_COLORED_SPECULAR= {
+				specular_map = { sampler_states = "wrap_anisotropic_srgb" }
+			}
+		}
+		
+		instance_data = {
+			defined_INSTANCED = {
+				world = { type = "matrix4x4" }
+				defined_MATERIAL_TINT_RGB = {
+					tint_rgb = { type = "vector3" }
+				}
+				defined_DRAW_WIREFRAME = {
+					dev_wireframe_color	 = { type = "vector4" }
+				}
+			}
+		}
+		
+		code="""			
+			#if defined(MASKED_VC_BLEND) || defined(VC_TINT_RGB) || defined(CLOTH_SHADING_VC_MASK)
+				#define VERTEX_COLOR
+			#endif
+			
+			#if defined(DETAIL_DIFFUSE_MAP) || defined(DETAIL_MATERIAL_MAP) || defined(DETAIL_NORMAL_MAP)
+				#define DETAIL_MAPPING
+			#endif			
+			
+			#if defined(VEGETATION_BENDING) || defined(DISSOLVE_ALPHA_OVER_DISTANCE) || defined(INSTANCED) || defined(CLOTH_SHADING)
+				#define NEEDS_WORLD_SPACE
+			#endif
+			
+			#if defined(CLOTH_SHADING)
+				#define PS_NEEDS_WP
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float3 normal : NORMAL0;
+				SKIN_INPUT				
+				#if defined(NORMAL_MAP)
+					float3 tangent : TANGENT;
+					float3 binormal : BINORMAL;
+				#endif
+				#if defined(VERTEX_COLOR) || defined(VEGETATION_BENDING)
+					float4 color : COLOR0;
+				#endif
+				
+				#if defined(HAS_UV)
+					float2 vs_default_uv : TEXCOORD0;
+					#if defined(DIFFUSE_MAP_UNIQUE_UV)
+						float2 vs_diffuse_uv : TEXCOORD1;
+					#else
+						#define vs_diffuse_uv vs_default_uv
+					#endif
+					#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+						float2 vs_self_illumination_uv : TEXCOORD2;
+					#else
+						#define vs_self_illumination_uv vs_default_uv
+					#endif
+					#if defined(NORMAL_MAP)
+						#define vs_normal_uv vs_default_uv
+					#endif
+					#if defined(MATERIAL_MAP_UNIQUE_UV)
+						float2 vs_material_uv : TEXCOORD3;
+					#else
+						#define vs_material_uv vs_default_uv
+					#endif					
+				#endif
+				
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					float4 baked_ambient_occlusion : COLOR1;
+				#endif
+				
+				#if defined(BRUSH_INSTANCED) && defined(GL2)
+					float4 instance_data0 : TEXCOORD4;
+					float4 instance_data1 : TEXCOORD5;
+					float4 instance_data2 : TEXCOORD6;
+					
+					#if defined(MATERIAL_TINT_RGB)
+						float4 instance_data3 : TEXCOORD7;
+					#endif
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;				
+				#if defined(NORMAL_MAP)
+					float3 tsm0 : TEXCOORD1;
+					float3 tsm1 : TEXCOORD2;
+					float3 tsm2 : TEXCOORD3;
+				#else
+					float3 normal : TEXCOORD1;
+				#endif
+				#if defined(USE_DEPTH_RT)
+					float depth : TEXCOORD7;
+				#endif
+				#if defined(VERTEX_COLOR)
+					float4 color : COLOR0;
+				#endif
+				
+				#if defined(DIFFUSE_MAP)
+					#if defined(NORMAL_MAP)
+						float4 uv0 : TEXCOORD0;
+						#define diffuse_uv uv0.xy
+						#define normal_uv uv0.zw
+					#else
+						float2 diffuse_uv : TEXCOORD0;		
+					#endif	
+				#else
+					#if defined(NORMAL_MAP)
+						float2 normal_uv : TEXCOORD0;
+					#endif
+				#endif				
+				
+				#if defined(MATERIAL_MAP)				
+					#if defined(SELF_ILLUMINATION_MAP)
+						float4 uv1 : TEXCOORD5;
+						#define material_uv uv1.xy
+						#define self_illumination_uv uv1.zw
+					#else
+						float2 material_uv : TEXCOORD5;
+					#endif
+				#elif defined(SELF_ILLUMINATION_MAP)
+					float2 self_illumination_uv : TEXCOORD5;				
+				#endif
+				
+				#if defined(BLEND_NORMAL_OBJECT_POSITIVE_Z)
+					#if defined(DISSOLVE_ALPHA_OVER_DISTANCE)
+						float4 user_data : TEXCOORD6;
+						#define object_z user_data.xyz
+						#define dissolve_alpha user_data.w
+					#else
+						float3 object_z : TEXCOORD6;
+					#endif				
+				#else
+					#if defined(DISSOLVE_ALPHA_OVER_DISTANCE)
+						float user_data : TEXCOORD6;
+						#define dissolve_alpha user_data.x
+					#endif				
+				#endif
+				
+				#if defined(PS_NEEDS_WP)
+					float3 wp : TEXCOORD7;
+				#endif
+				
+				#if defined(INSTANCED) && (defined(D3D11) || defined(GL2))
+					#if defined(DRAW_WIREFRAME)
+						float4 instance_wireframe_color : TEXCOORD4;
+					#elif defined(MATERIAL_TINT_RGB)					
+						float3 material_instance_tint : TEXCOORD4;
+					#endif
+
+				#endif
+				
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					float4 baked_ambient_occlusion : TEXCOORD4;
+				#endif
+			};
+			
+			CBUFFER_START(c_per_object)
+				#if defined(NEEDS_WORLD_SPACE)
+					float4x4 view_proj;
+				#else
+					float4x4 world_view_proj;
+				#endif				
+				float4x4 world;
+				#ifndef MATERIAL_MAP
+					float glossiness; // exports={ name="Glossiness Amount" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 sort_tag="1_MATERIAL_MAP_0" }
+					float specular; // exports={ name="Specular Mask" type="scalar" value=0.8 min=0.0 max=1.0 step=0.001 sort_tag="1_MATERIAL_MAP_1" }
+				#endif
+				#ifdef MASKED_VC_BLEND 
+					float masked_blend_smoothing; // exports={ name="Masked Blend Smoothing" type="scalar" value=0.2 min=0.001 max=1.0 step=0.001 sort_tag="3_MASKED_VC_BLEND4" }
+				#endif				
+				#ifdef SELF_ILLUMINATION_MAP
+					float self_illumination_multiplier; // exports={ name="Self Illumination Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.01 sort_tag="5_SELF_ILLUMINATION1" }
+					float emissive_material_intensity;
+				#endif
+				#if defined(BLEND_NORMAL_WORLD_POSITIVE_Z)
+					float normal_world_positive_z_blend; // exports={ name="Normal To World Z+ Blend" type="scalar" value=0.0 min=0.0 max=1.0 step=0.01 }
+				#endif	
+				#if defined(BLEND_NORMAL_OBJECT_POSITIVE_Z)
+					float normal_object_positive_z_blend; // exports={ name="Normal To Object Z+ Blend" type="scalar" value=0.0 min=0.0 max=1.0 step=0.01 }
+				#endif				
+				#if defined(ONE_BIT_ALPHA) && defined(EXTERNAL_ALPHA_REF)
+					float external_alpha_ref; // exports={ name="Alpha Mask Clip" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }
+				#endif
+				#if defined(DETAIL_MAPPING)
+					float2 detail_uv_scale; // exports={ name="Detail UV Scale" type="vector2" value=[5.0 5.0] min=[1 1] max=[20 20] step=[0.01 0.01] sort_tag="4_DETAIL_MAPPING3" }					
+				#endif			
+				#if defined(MATERIAL_TINT_RGB) 
+					float3 tint_rgb; // exports={ name="Material Tint Color (x2)" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+				#endif
+				#if defined(JITTERED_TRANSPARENCY)
+					float transparency; // exports={ name="Transparency" type="scalar" value=0.5 min=0.0 max=1 step=0.001 }
+				#endif								
+				#if !defined(DIFFUSE_MAP)
+					float3 diffuse_rgb; // exports={ name="Diffuse RGB" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+				#endif
+				#if defined(CLOTH_SHADING)
+					float2 rim_lobe_settings; // exports={ name="Rim Lobe Scale/Exp" type="vector2" value=[0.33 2] min=[0.001 0.001] max=[5.0 20.0] step=[0.01 0.01] }
+					float2 inner_lobe_settings; // exports={ name="Inner Lobe Scale/Exp" type="vector2" value=[0.33 2] min=[0.001 0.001] max=[5.0 20.0] step=[0.01 0.01] }
+					float lambert_scale;	// exports={ name="Lambert Scale" type="scalar" value=0.33 min=0.0 max=2 step=0.001 }					
+				#endif
+				#if defined(SKIN) && !defined(SUBSURFACE_SCATTERING_MAP)					
+					float sss_strength; // exports={ name="SSS Strength" type="scalar" value=0.8 min=0.0 max=1.0 step=0.001 sort_tag="1_MATERIAL_MAP_2" }
+				#endif
+				#if defined(DISSOLVE_ALPHA_OVER_DISTANCE)
+					float2 dissolve_distance_range; // exports={ name="Dissolve Distance Range [start, distance]" type="vector2" value=[32 5] min=[0 0.1] max=[100 100] step=[0.01 0.01] }
+				#endif
+				#if defined(INSTANCED) && defined(GL2)
+					float4 instance_buffer[100];
+				#endif	
+				float4 dev_wireframe_color;
+			CBUFFER_END	
+			
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" sort_tag="0_DIFFUSE_MAP"}
+			#endif
+			
+			#if defined(NORMAL_MAP)
+				sampler2D normal_map; // exports={ name="Normal Map" type="resource" sort_tag="2_NORMAL_MAP" }
+			#endif
+			
+			#if defined(MATERIAL_MAP)
+				sampler2D material_map; // exports={ name="Glossiness/Specular/Mask Map" type="resource" sort_tag="1_MATERIAL_MAP"}
+			#endif
+
+			#if defined(SELF_ILLUMINATION_MAP)		
+				sampler2D self_illumination_map; // exports={ name="Self Illumination Map" type="resource" sort_tag="5_SELF_ILLUMINATION" }
+			#endif
+			
+			#if defined(MASKED_VC_BLEND)
+				sampler2D blend_diffuse_map; // exports={ name="Blend Diffuse Map" type="resource" sort_tag="3_MASKED_VC_BLEND0" }
+				sampler2D blend_material_map; // exports={ name="Blend Material Map" type="resource" sort_tag="3_MASKED_VC_BLEND1" }
+				#if defined(NORMAL_MAP)
+					sampler2D blend_normal_map; // exports={ name="Blend Normal Map" type="resource" sort_tag="3_MASKED_VC_BLEND2" }
+				#endif
+			#endif			
+			
+			#if defined(DETAIL_DIFFUSE_MAP)		
+				sampler2D detail_diffuse_map; // exports={ name="Detail Diffuse Map" type="resource" sort_tag="4_DETAIL_MAPPING0" }
+			#endif
+			
+			#if defined(DETAIL_NORMAL_MAP)
+				sampler2D detail_normal_map; // exports={ name="Detail Normal Map" type="resource" sort_tag="4_DETAIL_MAPPING2" }
+			#endif
+			
+			#if defined(DETAIL_MATERIAL_MAP)
+				sampler2D detail_material_map; // exports={ name="Detail Glossiness/Specular/Mask Map" type="resource" sort_tag="4_DETAIL_MAPPING1"}
+			#endif			
+			
+			#if defined(HIQUALITY_GBUFFER_NORMALS)
+				sampler2D nft;
+			#endif
+			 
+			#if defined(BRUSH_INSTANCED) && defined(D3D11)
+				Buffer<float4> instance_data;
+				float instance_offset;
+			#endif
+			
+			#if defined(INSTANCED) && defined(D3D11)
+				Buffer<float4> idata;
+				float ioffset;
+			#endif			
+
+			#if defined(AMBIENT_OCCLUSION_MAP)		
+				sampler2D ambient_occlusion_map; // exports={ name="Ambient Occlusion Map" type="resource" sort_tag="5_AMBIENT_OCCLUSION" }
+			#endif
+
+			#if defined(SUBSURFACE_SCATTERING_MAP)		
+				sampler2D subsurface_scattering_map; // exports={ name="Subsurface Scattering Map" type="resource" sort_tag="5_AMBIENT_OCCLUSION" }
+			#endif
+
+			#if defined(COLORED_SPECULAR)		
+				sampler2D specular_map; // exports={ name="Specular Map" type="resource" sort_tag="0_SPECULAR_MASK" }
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input
+				#if (defined(INSTANCED) || defined(BRUSH_INSTANCED)) && (defined(D3D11) || defined(GL2))
+					, uint instance_id : SV_InstanceId
+				#endif
+				) 
+			{ 
+				PS_INPUT o; 
+				
+				float4 position;
+				float3 normal;
+				#ifdef NORMAL_MAP
+					float3 tangent;
+					float3 binormal;
+				#endif				
+				
+				#ifdef SKINNED					
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);										
+					normal = skin_vector(input.normal, input.blendindices, input.blendweights);
+					#ifdef NORMAL_MAP
+						tangent = skin_vector(input.tangent, input.blendindices, input.blendweights);
+						binormal = skin_vector(input.binormal, input.blendindices, input.blendweights);					
+					#endif
+				#else
+					position = input.position;					
+					normal = input.normal;
+					#ifdef NORMAL_MAP
+						tangent = input.tangent;
+						binormal = input.binormal;						
+					#endif					
+				#endif
+				
+				#if defined(BRUSH_INSTANCED) && defined(D3D11)
+						uint offset = (uint)instance_offset;
+						world[0] = instance_data.Load((offset+instance_id) * 3 + 0);
+						world[1] = instance_data.Load((offset+instance_id) * 3 + 1);
+						world[2] = instance_data.Load((offset+instance_id) * 3 + 2);
+						world[3][0] = world[0][3]; world[0][3] = 0;
+						world[3][1] = world[1][3]; world[1][3] = 0;
+						world[3][2] = world[2][3]; world[2][3] = 0;
+				#endif
+
+				#if defined(INSTANCED) && defined(D3D11)
+					uint offset = (uint)ioffset;
+					world[0] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 0));
+					world[1] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 1));
+					world[2] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 2));
+					world[3] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 3));
+					
+					#if defined(DRAW_WIREFRAME)
+						o.instance_wireframe_color = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_dev_wireframe_color));
+					#elif defined(MATERIAL_TINT_RGB)
+						o.material_instance_tint = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_tint_rgb)).rgb;
+					#endif
+				#endif
+				
+				#if defined(BRUSH_INSTANCED) && defined(GL2)					
+					world = float4x4(input.instance_data0, input.instance_data1, input.instance_data2, float4(0, 0, 0, 1));
+					world._m30_m31_m32 = world._m03_m13_m23;
+					world._m03_m13_m23 = float3(0, 0, 0);
+				#endif
+
+				#if defined(INSTANCED) && defined(GL2)
+					world = float4x4(instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 0],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 1],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 2],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 3]);
+
+					#if defined(DRAW_WIREFRAME)
+						o.instance_wireframe_color = instance_buffer[instance_id*IDATA_STRIDE + IDATA_dev_wireframe_color];
+					#elif defined(MATERIAL_TINT_RGB)
+						o.material_instance_tint = instance_buffer[instance_id*IDATA_STRIDE + IDATA_tint_rgb];
+					#endif
+				#endif
+				
+				float4 p;
+				#if defined(NEEDS_WORLD_SPACE)				
+					float4 wp = mul(position, world);
+					#if defined(VEGETATION_BENDING)
+						float3 op = world._m30_m31_m32;
+						float3 wnormal = mul(normal, (float3x3)world);						
+						wp = vegetation_bending(op, wp, wnormal, input.color, input.position); //TODO: decode_vertex_color(input.color);
+					#endif
+					p = mul(wp, view_proj);
+					
+					#ifdef PS_NEEDS_WP
+						o.wp = wp;
+					#endif					
+				#else
+					#if defined(BRUSH_INSTANCED) && (defined(D3D11) || defined(GL2))
+						position = mul(position, world);
+					#endif				
+					p = mul(position, world_view_proj);
+				#endif				
+				
+				#ifdef DIFFUSE_MAP
+					o.diffuse_uv = diffuse_uv_modifier(input.vs_diffuse_uv);
+				#endif
+				
+				#ifdef NORMAL_MAP
+					o.normal_uv = normal_uv_modifier(input.vs_normal_uv);				
+				#endif
+				
+				#ifdef MATERIAL_MAP
+					o.material_uv = material_uv_modifier(input.vs_material_uv);
+				#endif
+				
+				#ifdef SELF_ILLUMINATION_MAP
+					o.self_illumination_uv = self_illumination_uv_modifier(input.vs_self_illumination_uv);				
+				#endif
+				
+				#ifdef NORMAL_MAP
+					tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, tangent, binormal, normal, (float3x3)world);
+				#else
+					o.normal = mul(normal, (float3x3)world);
+				#endif
+				
+				#ifdef VERTEX_COLOR
+					// TODO: color remapping needed when vertex compression in place. 
+					#ifdef VC_COMPRESSED
+						o.color = decode_vertex_color(input.color);
+					#else
+						o.color = input.color; //decode_vertex_color(input.color);
+					#endif					
+				#endif				
+				
+				o.position = p; 
+				#if defined(USE_DEPTH_RT)
+					#if defined(GL2)
+						o.depth = linearize_depth(p.z*0.5 / p.w + 0.5);
+					#else
+						o.depth = linearize_depth(p.z / p.w);
+					#endif
+				#endif
+				
+				#if defined(BLEND_NORMAL_OBJECT_POSITIVE_Z)
+					o.object_z = world._m20_m21_m22;
+				#endif
+				
+				#if defined(DISSOLVE_ALPHA_OVER_DISTANCE)
+					float d = distance(wp.xyz, camera_world._m30_m31_m32);
+					o.dissolve_alpha = (d < dissolve_distance_range.x) ? 0 : saturate((d - dissolve_distance_range.x) / dissolve_distance_range.y);
+				#endif
+				
+				
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					o.baked_ambient_occlusion = input.baked_ambient_occlusion.zzzz;
+				#endif				
+				
+				return o;
+			}			
+			
+			#ifdef DRAW_WIREFRAME
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					#if defined(INSTANCED) && (defined(D3D11) || defined(GL2))
+						dev_wireframe_color = input.instance_wireframe_color;
+					#endif 
+					return dev_wireframe_color;					
+				}			
+			#else			
+			GBUFFER_OUT ps_main(
+				PS_INPUT input
+				#if defined(DOUBLE_SIDED)
+					,float vface : VFACE
+				#endif
+				#if (defined(SEMI_TRANSPARENCY) || defined(JITTERED_TRANSPARENCY)) 
+					#if defined(GCM)
+						, float4 wpos : WPOS
+					#elif defined(X360) || defined(GL2)
+						, float4 wpos : VPOS
+					#endif
+				#endif				
+				) 
+			{
+				GBUFFER_OUT o;
+				
+				#ifdef SEMI_TRANSPARENCY
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						int2 pos = int2(wpos.x, wpos.y);
+					#else
+						int2 pos = input.position.xy;					
+					#endif
+					int idx = (pos.x + pos.y) % 2;
+					if (idx == 0)
+						discard;
+				#endif
+				
+				#ifdef JITTERED_TRANSPARENCY					
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						int2 pos = int2(wpos.x, back_buffer_size.y-wpos.y);
+					#else
+						int2 pos = input.position.xy;					
+					#endif
+					
+					float alpha = (float)((pos.x%2) + 2*(pos.y%2)) * 0.25;
+					if (alpha >= transparency)
+						discard;
+				#endif
+				
+				#if defined(USE_DEPTH_RT)
+					DEPTH(o) = gbuffer_encode_depth(input.depth);
+				#endif
+				
+				#ifdef MATERIAL_MAP
+					half4 gsm = tex2D(material_map, input.material_uv);
+					half2 specular_glossiness = float2(gsm.g, gsm.r);
+				#else
+					half2 specular_glossiness = float2(specular, glossiness);
+				#endif
+				
+				#ifdef SKIN
+					#ifdef SUBSURFACE_SCATTERING_MAP
+						half sss_strength = tex2D(subsurface_scattering_map, input.diffuse_uv).g;
+					#endif
+				#endif
+				
+				#ifdef SEMI_TRANSPARENCY
+					half4 diffuse = half4(1,1,1,1);
+				#elif defined(DIFFUSE_MAP)				
+					half4 diffuse = tex2D(diffuse_map, input.diffuse_uv);
+				#else
+					half4 diffuse = half4(diffuse_rgb, 1);
+				#endif
+				half3 albedo = diffuse.rgb;
+				
+				#if defined(ONE_BIT_ALPHA)
+					#if defined(EXTERNAL_ALPHA_REF)
+						half alpha_ref = external_alpha_ref;
+					#else
+						half alpha_ref = ONE_BIT_ALPHA_REF;
+					#endif					
+					
+					#if defined(DISSOLVE_ALPHA_OVER_DISTANCE)
+						alpha_ref = lerp(alpha_ref, 1, input.dissolve_alpha);
+					#endif
+					
+					#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)
+						one_bit_alpha_mask(gsm.b, alpha_ref);
+					#else
+						one_bit_alpha_mask(diffuse.a, alpha_ref);
+					#endif
+				#endif				
+				
+				#ifdef DETAIL_MAPPING
+					float2 detail_uv = input.normal_uv * detail_uv_scale;
+					
+					#ifdef DETAIL_MATERIAL_MAP
+						float3 detail_gsm = tex2D(detail_material_map, detail_uv).rgb * 2;
+						specular_glossiness *= float2(detail_gsm.g, detail_gsm.r);
+					#endif
+				#endif								
+				
+				#ifdef VERTEX_COLOR
+					#if defined(MASKED_VC_BLEND)
+						half3 layer0_gsm = tex2D(blend_material_map, input.material_uv);								
+						half first_layer_blend = smoothstep(saturate(gsm.b - masked_blend_smoothing), gsm.b, input.color.a);
+						albedo = lerp(albedo, tex2D(blend_diffuse_map, input.diffuse_uv), first_layer_blend);
+						specular_glossiness = lerp(specular_glossiness, layer0_gsm.gr, first_layer_blend);						
+					#endif
+				#endif
+				
+				#ifdef DETAIL_DIFFUSE_MAP
+					half3 detail_diffuse = tex2D(detail_diffuse_map, detail_uv).rgb * 2;
+					albedo *= detail_diffuse;
+				#endif
+				
+				#ifdef VC_TINT_RGB
+					albedo *= fast_gamma_to_linear_rgb(input.color.rgb);
+				#endif
+				
+				#ifdef MATERIAL_TINT_RGB
+					#if defined(INSTANCED) && (defined(D3D11) || defined(GL2))
+						tint_rgb = input.material_instance_tint;
+					#endif
+					
+					albedo *= tint_rgb * 2;
+				#endif
+				
+				half a;				
+				half ao = 1;
+				#ifdef AMBIENT_OCCLUSION_MATERIAL_MAP
+					ao = gsm.a;
+				#elif defined(AMBIENT_OCCLUSION_MAP)				
+					ao = tex2D(ambient_occlusion_map, input.normal_uv).r;
+				#endif
+				
+				#if defined(BAKED_VERTEX_AMBIENT_OCCLUSION)
+					ao *= input.baked_ambient_occlusion.b;
+				#endif				
+				
+				ALBEDO(o) = gbuffer_encode_albedo(albedo);
+				
+				half3 world_space_normal = half3(0,0,0);
+				#ifdef NORMAL_MAP  					
+					half3 tnormal = decode_normal_map(tex2D(normal_map, input.normal_uv));
+					#if defined(MASKED_VC_BLEND)					
+						half3 first_layer_tnormal = decode_normal_map(tex2D(blend_normal_map, input.normal_uv));						
+						tnormal = lerp(tnormal, first_layer_tnormal, first_layer_blend);
+					#endif					
+					#ifdef DETAIL_NORMAL_MAP
+						half3 detail_tnormal = decode_normal_map(tex2D(detail_normal_map, detail_uv));
+						tnormal = half3(tnormal.xy + detail_tnormal.xy, tnormal.z * detail_tnormal.z);							
+					#endif
+					
+					#if defined(DOUBLE_SIDED)
+						if (vface < 0) {
+							input.tsm0.z = -input.tsm0.z;
+							input.tsm1.z = -input.tsm1.z;
+							input.tsm2.z = -input.tsm2.z;
+						}
+					#endif
+					
+					world_space_normal = rotate_vector3(tnormal, (half3)input.tsm0, (half3)input.tsm1, (half3)input.tsm2);
+				#else										
+					world_space_normal = normalize((half3)input.normal);
+					#if defined(DOUBLE_SIDED)
+						world_space_normal = vface < 0 ? -world_space_normal : world_space_normal;
+					#endif
+				#endif
+				
+				#if defined(BLEND_NORMAL_WORLD_POSITIVE_Z)
+					#if defined(MASK_BLEND_NORMAL_WITH_MATERIAL)
+						normal_world_positive_z_blend *= gsm.b;
+					#endif
+
+					world_space_normal = normalize(lerp(world_space_normal, half3(0,0,1), normal_world_positive_z_blend));
+				#endif
+
+				#if defined(BLEND_NORMAL_OBJECT_POSITIVE_Z)
+					#if defined(MASK_BLEND_NORMAL_WITH_MATERIAL)
+						normal_object_positive_z_blend *= gsm.b;
+					#endif
+				
+					world_space_normal = normalize(lerp(world_space_normal, input.object_z, normal_object_positive_z_blend));
+				#endif
+
+				#if defined(HIQUALITY_GBUFFER_NORMALS)
+					NORMAL(o) = gbuffer_encode_normal_hiquality(world_space_normal, nft);
+				#else
+					NORMAL(o) = gbuffer_encode_normal(world_space_normal);
+				#endif				
+				
+				SPECULAR(o) = gbuffer_encode_specular_mask(specular_glossiness.x);
+				GLOSSINESS(o) = gbuffer_encode_glossiness(specular_glossiness.y);				
+				
+				#ifdef SELF_ILLUMINATION_MAP
+					half4 il = tex2D(self_illumination_map, input.self_illumination_uv);
+					#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+						il.rgb *= tint_rgb;
+					#endif
+					
+					il.rgb *= self_illumination_multiplier * emissive_material_intensity;
+				
+					#ifndef X360
+						LIGHT_ACCUMULATION(o) = gbuffer_encode_self_illumination(il.rgb);
+					#endif
+				#endif
+				
+				#if defined(CLOTH_SHADING)
+					half4 lobe_settings = half4(inner_lobe_settings.xy, rim_lobe_settings.xy);
+					#if defined(CLOTH_SHADING_VC_MASK)
+						lobe_settings *= input.color;					
+					#endif
+					half v_dot_n = saturate(dot(world_space_normal, normalize(camera_pos - input.wp)));
+					half rim_lobe = lobe_settings.z * pow(1-v_dot_n, lobe_settings.w);
+					half inner_lobe = lobe_settings.x * pow(v_dot_n, lobe_settings.y);
+					half diffuse_multiplier = saturate((lambert_scale + rim_lobe + inner_lobe) * 0.5);
+					
+					GBUFFER_AUX(o) = half4(0, CLOTH_MATERIAL, diffuse_multiplier, ao);					
+				#elif defined(SKIN)				
+					GBUFFER_AUX(o) = half4(0, SKIN_MATERIAL, sss_strength, ao);
+				#elif defined(COLORED_SPECULAR)
+					half3 spec_col = tex2D(specular_map, input.diffuse_uv).rgb;
+					spec_col = sqrt(spec_col);
+					GBUFFER_AUX(o) = half4(0, COLORED_SPECULAR_MATERIAL + spec_col.r, spec_col.g, ao);
+					SPECULAR(o) = spec_col.b;
+				#else
+					GBUFFER_AUX(o) = half4(0, DEFAULT_MATERIAL, 0, ao);
+				#endif				
+				
+				return o;
+			} 
+			#endif			
+		"""
+	}	
+	
+	depth_only = {
+		includes = [ "common", "skinning", "vegetation_bending" ]
+		
+		samplers = {
+			defined_ONE_BIT_ALPHA = {
+				defined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {
+					material_map = { sampler_states = "wrap_linear_srgb" }	
+				}
+				ndefined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {					
+					diffuse_map = { sampler_states = "wrap_linear_srgb" }
+				}				
+			}		
+		}	
+		
+		instance_data = {
+			defined_INSTANCED = {
+				world = { type = "matrix4x4" }
+			}
+		}		
+		
+		code="""
+			#if defined(VEGETATION_BENDING) || defined(INSTANCED)
+				#define NEEDS_WORLD_SPACE
+			#endif
+		
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#if defined(ONE_BIT_ALPHA)
+					float2 uv : TEXCOORD0;
+				#endif
+				SKIN_INPUT
+				#if defined(VEGETATION_BENDING)
+					float4 color : COLOR0;
+					float3 normal : NORMAL;
+				#endif				
+			};
+			/*
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				uint rt_index : SV_RenderTargetArrayIndex;
+			};
+			*/
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(ONE_BIT_ALPHA)
+					float2 uv : TEXCOORD0;
+				#endif				
+			};
+			
+			CBUFFER_START(c0)
+				#if defined(NEEDS_WORLD_SPACE)
+					float4x4 world;
+					float4x4 view_proj;
+				#else
+					float4x4 world_view_proj;
+				#endif				
+				#if defined(ONE_BIT_ALPHA) && defined(EXTERNAL_ALPHA_REF)
+					float external_alpha_ref;
+				#endif
+				//float rt_index;
+
+				#if defined(INSTANCED) && defined(GL2)
+					float4 instance_buffer[100];
+				#endif	
+			CBUFFER_END
+			
+			#if defined(ONE_BIT_ALPHA)
+				#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)
+					sampler2D material_map;
+				#else
+					sampler2D diffuse_map;
+				#endif
+			#endif			
+			
+			#if defined(INSTANCED) && defined(D3D11)
+				Buffer<float4> idata;
+				float ioffset;
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input
+				#if defined(INSTANCED) && (defined(D3D11) || defined(GL2))
+					, uint instance_id : SV_InstanceId
+				#endif
+				) 
+			{
+				PS_INPUT o;
+				
+				float4 position;
+				#ifdef SKINNED
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);					
+				#else								
+					position = input.position;
+				#endif
+				
+				#if defined(INSTANCED) && defined(D3D11)
+					uint offset = (uint)ioffset;
+					world[0] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 0));
+					world[1] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 1));
+					world[2] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 2));
+					world[3] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 3));
+				#endif	
+
+				#if defined(INSTANCED) && defined(GL2)
+					world = float4x4(instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 0],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 1],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 2],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 3]);
+				#endif			
+				
+				float4 p;
+				#if defined(NEEDS_WORLD_SPACE)				
+					float4 wp = mul(position, world);
+					#if defined(VEGETATION_BENDING)
+						float3 op = world._m30_m31_m32;
+						float3 wnormal = mul(input.normal, (float3x3)world);
+						wp = vegetation_bending(op, wp, wnormal, input.color, input.position); //TODO: decode_vertex_color(input.color);
+					#endif
+					p = mul(wp, view_proj);
+				#else
+					p = mul(position, world_view_proj);
+				#endif				
+				
+				o.position = p;
+				
+				#ifdef ONE_BIT_ALPHA
+					o.uv = input.uv;
+				#endif
+				return o;
+			}
+			/*
+			[maxvertexcount(3)]
+			void gss_main(triangle GS_INPUT input[3], inout TriangleStream<PS_INPUT> output) {
+				PS_INPUT o;
+				o.rt_index = (uint)rt_index;
+				[unroll]
+				for (int v = 0; v < 3; ++v) {
+					o.position = input[v].position;					
+					output.Append(o);
+				}
+			}
+			*/
+			
+			#if !defined(X360) || defined(ONE_BIT_ALPHA)
+				float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+					#if defined(ONE_BIT_ALPHA)
+						#if defined(EXTERNAL_ALPHA_REF)
+							half alpha_ref = external_alpha_ref;
+						#else
+							half alpha_ref = ONE_BIT_ALPHA_REF;
+						#endif
+						
+						#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)						
+							one_bit_alpha_mask(tex2D(material_map, input.uv).b, alpha_ref);
+						#else
+							one_bit_alpha_mask(tex2D(diffuse_map, input.uv).a, alpha_ref);
+						#endif
+					#endif				
+
+
+					return float4(1,1,1,1);
+				}	
+			#endif
+		"""
+	}	 	
+		
+	forward_base = { 
+		includes = [ "common", "gbuffer_access", "skinning", "vegetation_bending",  "uv_management" ]
+		
+		samplers = {
+			defined_SKYDOME = {
+				defined_DIFFUSE_MAP = {
+					diffuse_map = { sampler_states = "wrap_anisotropic" }
+				}				
+			}
+			ndefined_SKYDOME = {
+				defined_DIFFUSE_MAP = {
+					diffuse_map = { sampler_states = "wrap_anisotropic_srgb" }				
+				}
+			}
+			
+			defined_SEMI_TRANSPARENCY_RESOLVE = {
+				light_accumulation = { sampler_states = "clamp_point" }
+			}
+			defined_SOFT_ALPHA_TEST_TANGENT = {
+				light_accumulation = { sampler_states = "clamp_linear" }
+			}
+			defined_CUBE_ENVIRONMENT_MAPPING = {
+				defined_CUBE_FROM_SHADING_ENV = {
+					shading_environment_reflection_map = { sampler_states = "clamp_anisotropic" }	
+				}
+				ndefined_CUBE_FROM_SHADING_ENV = {
+					defined_CUBE_AS_RGBM = {
+						reflection_map = { sampler_states = "clamp_anisotropic" }	
+					}
+					ndefined_CUBE_AS_RGBM = {
+						reflection_map = { sampler_states = "clamp_anisotropic_srgb" }	
+					}
+				}
+				
+				albedo = { sampler_states = "clamp_point" }
+				normal = { sampler_states = "clamp_point" }
+				mask = { sampler_states = "clamp_point" }
+			}
+			
+			// Emissive pass is currently only used on X360 where all self illumination/emissive is 
+			// rendered as a separate pass to reduce MRT memory footprint on X360 during G-buffer population
+			defined_EMISSIVE_PASS = {
+				defined_SELF_ILLUMINATION_MAP = {
+					self_illumination_map = { sampler_states = "wrap_anisotropic_srgb" }
+				}
+			}
+		}	
+
+		instance_data = {
+			defined_INSTANCED = {
+				world = { type = "matrix4x4" }
+			}
+		}		
+		
+		code="""		
+			#if defined(DIFFUSE_MAP) || defined(SELF_ILLUMINATION_MAP)
+				#define UV0
+			#endif
+			
+			sampler2D light_accumulation;
+			#if defined(DIFFUSE_MAP)		
+				sampler2D diffuse_map; // exports={ name="Diffuse Map" type="resource" }
+			#endif
+			
+			#if defined(EMISSIVE_PASS) && defined(SELF_ILLUMINATION_MAP)
+				sampler2D self_illumination_map; // exports={ name="Self Illumination Map" type="resource" sort_tag="5_SELF_ILLUMINATION" }
+			#endif
+			
+			#if defined(CUBE_ENVIRONMENT_MAPPING)
+				#if defined(CUBE_FROM_SHADING_ENV)
+					samplerCUBE shading_environment_reflection_map;
+				#else
+					samplerCUBE reflection_map; // exports={ name="Reflection Map" type="resource" }
+				#endif
+				sampler2D normal;
+				sampler2D albedo;
+				sampler2D mask;
+			#endif
+					
+			#if defined(VEGETATION_BENDING) || defined(CUBE_ENVIRONMENT_MAPPING) || defined(INSTANCED)
+				#define NEEDS_WORLD_SPACE
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				SKIN_INPUT
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+
+					#if defined(EMISSIVE_PASS)
+						#if defined(SELF_ILLUMINATION_MAP_UNIQUE_UV)
+							float2 vs_self_illumination_uv : TEXCOORD2;
+						#else
+							#define vs_self_illumination_uv uv
+						#endif
+					#endif
+				#endif
+				
+				#if defined(VEGETATION_BENDING)
+					float4 color : COLOR0;
+					float3 normal : NORMAL;
+				#endif
+				#if defined(SOFT_ALPHA_TEST_TANGENT)
+					float3 tangent : TANGENT;
+				#endif
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(UV0)
+					float2 uv : TEXCOORD0;
+				#endif
+				#if defined(CUBE_ENVIRONMENT_MAPPING)
+					float3 camera_vector : TEXCOORD1;
+				#endif
+				#if defined(SOFT_ALPHA_TEST_TANGENT)
+					float3 tangent : TEXCOORD2;
+				#endif				
+				#if defined(EMISSIVE_PASS)
+					#if defined(SELF_ILLUMINATION_MAP)
+						float2 self_illumination_uv : TEXCOORD3;
+					#endif
+				#endif
+			};			
+			
+			CBUFFER_START(c0)			
+				#ifdef CAMERA_LOCK_XY
+					float4x4 world;
+					float4x4 view;
+					float4x4 proj;
+				#elif defined(NEEDS_WORLD_SPACE)
+					float4x4 world;
+					float4x4 view_proj;
+				#endif				
+				float4x4 world_view_proj;
+				#ifdef SKYDOME
+					float intensity; // exports={ name="Skydome Intensity Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.1 }
+				#endif
+				#ifdef SEMI_TRANSPARENCY_RESOLVE
+					float transparency; // exports={ name="Transparency" type="scalar" value=0.5 min=0.0 max=1 step=0.001 }
+				#endif
+				#if defined(CUBE_ENVIRONMENT_MAPPING)
+					float cube_environment_intensity_sun;
+					float cube_environment_intensity_shadow;
+					float3 sun_direction;
+				#endif
+
+				#if defined(INSTANCED) && defined(GL2)
+					float4 instance_buffer[100];					
+				#endif
+				
+				#if defined(EMISSIVE_PASS)
+					#ifdef SELF_ILLUMINATION_MAP
+						float self_illumination_multiplier; // exports={ name="Self Illumination Multiplier" type="scalar" value=1.0 min=0.0 max=10.0 step=0.01 sort_tag="5_SELF_ILLUMINATION1" }
+						float emissive_material_intensity;
+					#endif
+
+					#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+						float3 tint_rgb;
+					#endif					
+				#endif
+			CBUFFER_END
+
+			#if defined(INSTANCED) && defined(D3D11)
+				Buffer<float4> idata;
+				float ioffset;
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input
+				#if defined(INSTANCED) && (defined(D3D11) || defined(GL2))
+					, uint instance_id : SV_InstanceId
+				#endif
+				) 
+			{
+				PS_INPUT o;
+				
+				float4 position;
+				#ifdef SKINNED
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);					
+				#else								
+					position = input.position;
+				#endif				
+				
+				#if defined(SOFT_ALPHA_TEST_TANGENT)
+					#ifdef SKINNED
+						float3 tangent = skin_vector(input.tangent, input.blendindices, input.blendweights);
+					#else
+						float3 tangent = input.tangent;					
+					#endif
+					o.tangent = mul(tangent, (float3x3)world_view_proj);
+				#endif
+				
+				#if defined(INSTANCED) && defined(D3D11)
+					uint offset = (uint)ioffset;
+					world[0] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 0));
+					world[1] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 1));
+					world[2] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 2));
+					world[3] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 3));
+				#endif
+
+				#if defined(INSTANCED) && defined(GL2)
+					world = float4x4(instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 0],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 1],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 2],
+									instance_buffer[instance_id*IDATA_STRIDE + IDATA_world + 3]);
+				#endif
+				
+				float4 p;
+				#if defined(NEEDS_WORLD_SPACE)				
+					float4 wp = mul(position, world);
+					#if defined(VEGETATION_BENDING)
+						float3 op = world._m30_m31_m32;
+						float3 normal;
+						#ifdef SKINNED
+							normal = skin_vector(input.normal, input.blendindices, input.blendweights);
+						#else								
+							normal = input.normal;
+						#endif						
+						float3 wnormal = mul(normal, (float3x3)world);						
+						wp = vegetation_bending(op, wp, wnormal, input.color, input.position); //TODO: decode_vertex_color(input.color);
+					#endif
+					#if defined(CAMERA_LOCK_XY)						
+						#ifdef CAMERA_LOCK_Z
+							view._m30_m31_m32 = float3(0,0,0);
+						#else
+							view._m30_m31 = float2(0,0);
+						#endif
+						p = mul(mul(float4(wp,1),view), proj);
+					#else
+						#if defined(CUBE_ENVIRONMENT_MAPPING) && !defined(VEGETATION_BENDING) && !defined(INSTANCED)
+							p = mul(position, world_view_proj);
+						#else
+							p = mul(wp, view_proj);
+						#endif
+					#endif
+				#else
+					#if defined(CAMERA_LOCK_XY)		
+						float3 wp = mul(position, world);
+						#ifdef CAMERA_LOCK_Z
+							view._m30_m31_m32 = float3(0,0,0);
+						#else
+							view._m30_m31 = float2(0,0);
+						#endif
+						p = mul(mul(float4(wp,1),view), proj);
+					#else
+						p = mul(position, world_view_proj);
+					#endif
+				#endif							
+				
+				o.position = p;
+				
+				#if defined(PROJECT_TO_FAR_PLANE)
+					o.position.z = o.position.w;
+				#endif
+				
+				#if defined(UV0)
+					o.uv = input.uv;
+				#endif
+				
+				#if defined(CUBE_ENVIRONMENT_MAPPING)
+					o.camera_vector = normalize(camera_pos - wp);
+				#endif
+				
+				#if defined(EMISSIVE_PASS) && defined(SELF_ILLUMINATION_MAP)
+					o.self_illumination_uv = self_illumination_uv_modifier(input.vs_self_illumination_uv);
+				#endif
+				
+				return o;
+			}
+			
+			half4 ps_main(PS_INPUT input
+				#if defined(SEMI_TRANSPARENCY_RESOLVE) || defined(CUBE_ENVIRONMENT_MAPPING) || defined(SOFT_ALPHA_TEST_TANGENT)
+					#if defined(GCM)
+						, float4 wpos : WPOS
+					#elif defined(X360) || defined(GL2)
+						, float4 wpos : VPOS
+					#endif
+				#endif
+				) : SV_TARGET0 
+			{				
+				#ifdef SEMI_TRANSPARENCY_RESOLVE
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						half2 screen_uv = wpos.xy / back_buffer_size;
+					#else
+						half2 screen_uv = input.position.xy / back_buffer_size;				
+					#endif				
+					
+					float4 cross_uv = half4(1.0, 0.0, 0.0, 1.0) / back_buffer_size.xyxy;
+					float4 center = tex2D(light_accumulation, screen_uv);
+					float4 corners = (
+						tex2D(light_accumulation, screen_uv + cross_uv.xy) +
+						tex2D(light_accumulation, screen_uv - cross_uv.xy) +
+						tex2D(light_accumulation, screen_uv + cross_uv.zw) +
+						tex2D(light_accumulation, screen_uv - cross_uv.zw) ) * 0.25;					
+					
+					#ifdef DIFFUSE_MAP					
+						half4 albedo = tex2D(diffuse_map, input.uv);
+					#else
+						half4 albedo = float4(0.6, 0.6, 0.6, 1);
+					#endif
+					
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						int2 pos = int2(wpos.x, wpos.y);
+					#else
+						int2 pos = input.position.xy;					
+					#endif
+					int idx = (pos.x + pos.y) % 2;
+
+					if (idx == 0)
+						return lerp(center, corners*albedo, transparency * albedo.a);
+					else 
+						return lerp(corners, center*albedo, transparency * albedo.a);
+				#elif defined(SOFT_ALPHA_TEST_TANGENT)
+					#if defined(GCM) || defined(X360) || defined(GL2)
+						half2 screen_uv = wpos.xy / back_buffer_size;
+					#else
+						half2 screen_uv = input.position.xy / back_buffer_size;				
+					#endif				
+															
+					float2 streak_dir = normalize(input.tangent.xy) / back_buffer_size.xy;
+					
+					float4 center = tex2D(light_accumulation, screen_uv);
+					float4 streak_blur = (
+						tex2D(light_accumulation, screen_uv + streak_dir.xy) +
+						tex2D(light_accumulation, screen_uv + streak_dir.xy*2) +
+						tex2D(light_accumulation, screen_uv - streak_dir.xy) +
+						tex2D(light_accumulation, screen_uv - streak_dir.xy*2) ) * 0.25;						
+					
+					float a = tex2D(diffuse_map, input.uv).a;
+					return lerp(center, streak_blur, a);
+				#else				
+					half4 c = half4(0,0,0,0);
+					#if defined(CUBE_ENVIRONMENT_MAPPING)
+						#if defined(GCM) || defined(X360) || defined(GL2)
+							half2 screen_uv = wpos.xy / back_buffer_size;
+						#else
+							half2 screen_uv = input.position.xy / back_buffer_size;				
+						#endif
+						
+						half4 normal_glossiness = tex2D(normal, screen_uv);
+						half specular_mask = gbuffer_decode_specular_mask(tex2D(albedo, screen_uv));
+						half3 wn = normalize(gbuffer_decode_normal(normal_glossiness));
+						
+						half3 e = normalize(input.camera_vector);
+						half3 reflection = reflect(e, wn);
+						
+						// TODO: need to feed number of mip-levels to shader
+						#if defined(CUBE_FROM_SHADING_ENV)
+							half4 cube = texCUBElod(shading_environment_reflection_map, half4(reflection, (1.0 - normal_glossiness.a) * 8));
+						#else											
+							half4 cube = texCUBElod(reflection_map, half4(reflection, (1.0 - normal_glossiness.a) * 8));
+						#endif
+						#ifdef CUBE_AS_RGBM
+							cube.rgb = rgbm_decode(cube);
+						#endif
+						
+						half3 s_dir = normalize(-sun_direction);
+
+						half4 gbuffer_mask = tex2D(mask, screen_uv);
+						half2 shadow_ao_mask = gbuffer_mask.ra;
+						half cube_intensity = lerp(cube_environment_intensity_shadow * shadow_ao_mask.g, cube_environment_intensity_sun, shadow_ao_mask.r * saturate(dot(s_dir, wn)));
+
+						half material_idx = gbuffer_mask.g;					
+						half4 specular_col = (material_idx >= COLORED_SPECULAR_MATERIAL) ? half4(gbuffer_mask.gb * gbuffer_mask.gb, specular_mask, 1) : specular_mask.rrrr;
+						
+						c += cube * specular_col * cube_intensity;						
+					#endif
+					
+					#if defined(EMISSIVE_PASS)
+						#if defined(SELF_ILLUMINATION_MAP)
+							half4 il = tex2D(self_illumination_map, input.self_illumination_uv);
+							#if defined(MATERIAL_TINT_RGB) && defined(SELF_ILLUMINATION_TINT_MATERIAL)
+								il.rgb *= tint_rgb;
+							#endif
+							
+							il.rgb *= self_illumination_multiplier * emissive_material_intensity;
+							c += il;							
+						#endif
+					#endif					
+					
+					#if !defined(CUBE_ENVIRONMENT_MAPPING) && !defined(CUBE_ENVIRONMENT_MAPPING)
+						#if defined(DIFFUSE_MAP)
+							c = tex2D(diffuse_map, input.uv);
+						#endif
+						
+						#if defined(SKYDOME)
+							#if defined(DIFFUSE_AS_RGBM)
+								c.rgb = rgbm_decode(c);
+							#else
+								c.rgb *= intensity;
+							#endif						
+						#endif
+					#endif
+					
+					return c;
+				#endif
+			}	
+		"""
+	}
+	
+	water = { 
+		includes = [ "common", "gbuffer_access", "fog" ]
+		
+		samplers = {
+			normal_map = { sampler_states = "wrap_anisotropic" }			
+			defined_X360 = {				
+				blend_normal_map = { sampler_states = "wrap_point" }
+			}
+			ndefined_X360 = {
+				blend_normal_map = { sampler_states = "wrap_anisotropic" }
+			}
+			light_accumulation = { sampler_states = "clamp_point" }
+			mask = { sampler_states = "clamp_point" }
+			depth = { sampler_states = "clamp_point" }
+			defined_CUBE_ENVIRONMENT_MAPPING = {
+				defined_CUBE_FROM_SHADING_ENV = {
+					shading_environment_reflection_map = { sampler_states = "clamp_anisotropic" }	
+				}
+				ndefined_CUBE_FROM_SHADING_ENV = {
+					defined_CUBE_AS_RGBM = {
+						reflection_map = { sampler_states = "clamp_anisotropic" }	
+					}
+					ndefined_CUBE_AS_RGBM = {
+						reflection_map = { sampler_states = "clamp_anisotropic_srgb" }	
+					}
+				}
+			}
+			
+			defined_FOAM = {
+				diffuse_map = { sampler_states = "wrap_anisotropic" }
+			}
+		}	
+		
+		code="""
+			#ifndef MASK
+				sampler2D normal_map; // exports={ name="Normal Map" type="resource" }
+				sampler2D blend_normal_map; // exports={ name="Perlin Noise Map" type="resource" }
+				sampler2D light_accumulation;
+				sampler2D depth;
+				sampler2D mask;
+				#if defined(CUBE_ENVIRONMENT_MAPPING)
+					#if defined(CUBE_FROM_SHADING_ENV)
+						samplerCUBE shading_environment_reflection_map;
+					#else
+						samplerCUBE reflection_map; // exports={ name="Reflection Map" type="resource" }
+					#endif
+				#endif
+				#if defined(FOAM)
+					sampler2D diffuse_map; // exports={ name="Foam Map" type="resource" }
+				#endif
+			#endif
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#ifndef MASK
+					float3 normal : NORMAL0;
+					#ifndef WORLD_XY_AS_UV
+						float3 tangent : TANGENT;
+						float3 binormal : BINORMAL;
+						float2 uv : TEXCOORD0;
+					#endif
+				#endif
+			};
+			
+			// TEXCOORD6 is defined to ATTR4 for input to Vertex Programs to avoid conflicting with TANGENT, 
+			// ATTR not allowed to be used in output semantic from VP. Need to come up with a cleaner solution for this. 
+			#if defined(GCM) && defined(TEXCOORD6)			
+				#undef TEXCOORD6
+			#endif
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#ifndef MASK
+					float4 uv : TEXCOORD0;	
+					float3 tsm0 : TEXCOORD1;
+					float3 tsm1 : TEXCOORD2;
+					float3 tsm2 : TEXCOORD3;
+					float4 wp : TEXCOORD4;
+					float4 w : TEXCOORD5;
+					
+					#ifdef FOAM						
+						#ifdef BLEND_TO_PERLIN_NOISE
+							float4 perlin_uv : TEXCOORD6;
+							#define foam_uv perlin_uv.zw
+						#else
+							float2 foam_uv : TEXCOORD6;
+						#endif
+					#elif defined(BLEND_TO_PERLIN_NOISE)
+						float2 perlin_uv : TEXCOORD6;
+					#endif
+				#endif
+			};			
+			
+			#ifdef MASK
+				CBUFFER_START(c_mask)
+					float4x4 world;
+					float4x4 view_proj;			
+				CBUFFER_END			
+			#else
+				CBUFFER_START(c0)				
+					float4x4 world;
+					float4x4 view_proj;
+					#ifdef WORLD_XY_AS_UV
+						float2 layer0_normal_tile_size; // exports={ name="Layer 0 Normal Map Tile" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+						float2 layer1_normal_tile_size; // exports={ name="Layer 1 Normal Map Tile" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+						#ifdef BLEND_TO_PERLIN_NOISE
+							float2 perlin_noise_tile_size; //  exports={ name="Perlin Normal Map Tile" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+						#endif
+						#ifdef FOAM
+							float2 foam_tile_size; // exports={ name="Foam Map Tile" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+						#endif
+					#else
+						float2 layer0_normal_tile_scale; // exports={ name="Layer 0 Normal Map Scale" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+						float2 layer1_normal_tile_scale; // exports={ name="Layer 1 Normal Map Scale" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+						#ifdef BLEND_TO_PERLIN_NOISE
+							float2 perlin_noise_tile_size; //  exports={ name="Perlin Normal Map Scale" type="vector2" value=[1.0 1.0] min=[0 0] max=[30 30] step=[0.01 0.01]}
+						#endif
+						#ifdef FOAM
+							float2 foam_tile_scale; // exports={ name="Foam Map Scale" type="vector2" value=[2.0 2.0] min=[0 0] max=[30 30] step=[0.01 0.01]}				
+						#endif						
+					#endif	
+					float2 layer0_normal_tile_scroll_speed; // exports={ name="Layer 0 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+					float2 layer1_normal_tile_scroll_speed; // exports={ name="Layer 1 Normal Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+					#ifdef BLEND_TO_PERLIN_NOISE
+						float2 perlin_noise_tile_scroll_speed; // exports={ name="Perlin Noise Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}					
+						float3 perlin_noise_octaves; // exports={ name="Perlin Noise Octaves" type="vector3" value=[1.12 0.59 0.23] min=[0 0 0] max=[2 2 2] step=[0.005 0.005 0.005]}
+						float3 perlin_noise_gradients; // exports={ name="Perlin Noise Gradients" type="vector3" value=[1.4 1.6 2.2] min=[0 0 0] max=[3 3 3] step=[0.005 0.005 0.005]} 
+						float2 perlin_noise_blend; // exports = { name="Perlin Noise Blend Start/Distance" type="vector2" value=[80 150] min=[10 10] max=[1000 1000] step=[0.5 0.5]}
+					#endif
+					#ifdef FOAM
+						#ifdef FOAM
+							float2 foam_tile_scroll_speed; // exports={ name="Foam Map Scroll Speed" type="vector2" value=[0.1 0.1] min=[-2 -2] max=[2 2] step=[0.005 0.005]}
+						#endif					
+					#endif
+					float2 fresnel_settings; // exports={ name="Fresnel Settings [bias, exp]" type="vector2" value=[0.1 3] min=[0 0] max=[1 10] step=[0.001 0.005]}
+					float refraction_amount; // exports={ name="Refraction Amount" type="scalar" value=0.01 min=0.0 max=1.0 step=0.001 }
+					float specular_mask; // exports={ name="Specular Mask" type="scalar" value=0.8 min=0.0 max=1.0 step=0.001 }
+					float glossiness; // exports={ name="Glossiness Amount" type="scalar" value=0.5 min=0.0 max=1.0 step=0.001 }	
+					float normal_contrast; // exports={ name="Normal Contrast" type="scalar" value=1 min=0.0 max=1.0 step=0.001 }	
+					float3 surface_albedo; // exports={ name="Surface Color" type="vector3" value=[0.3 0.3 0.8] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001]}										
+					float3 ambient_top_color;
+					float3 ambient_bottom_color;
+					float ambient_camera_falloff;
+					#ifdef COLOR_EXTINCTION	
+						float3 color_extinction; // exports={ name="RGB color extinction depth" type="vector3" value=[4.5 75 300] min=[0 0 0] max=[300 300 300] step=[0.2 0.2 0.2] }	
+						float3 depth_color; // exports={ name="Deep Water Color" type="vector3" value=[0.1 0.1 0.4] min=[0 0 0] max=[4 4 4] step=[0.005 0.005 0.005] }	
+					#endif
+					#ifdef GEOMETRY_FADE_OUT
+						float geometry_fade_out_distance; // exports={ name="Geometry Fade out Distance" type="scalar" value=0.2 min=0.01 max=0.8 step=0.005 }
+					#endif
+					#if defined(CUBE_ENVIRONMENT_MAPPING)
+						float cube_environment_intensity_sun;
+						float cube_environment_intensity_shadow;
+					#endif
+					#if defined(FOAM)
+						float foam_fade_in; // exports={ name="Foam Fade in Depth" type="scalar" value=0.2 min=0.01 max=2.0 step=0.005 }
+					#endif
+				CBUFFER_END			
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				#ifdef MASK
+					float3 wp = mul(input.position, world);
+					o.position = mul(float4(wp,1), view_proj);
+					return o;
+				#else				
+					float3 wp = mul(input.position, world);
+					o.wp.xyz = wp;
+					o.position = mul(float4(wp,1), view_proj);	
+					
+					#if defined(GL2)
+						#define layer0_scroll float2(layer0_normal_tile_scroll_speed.x, -layer0_normal_tile_scroll_speed.y)
+						#define layer1_scroll float2(layer1_normal_tile_scroll_speed.x, -layer1_normal_tile_scroll_speed.y)
+						
+						#define foam_scroll float2(foam_tile_scroll_speed.x, -foam_tile_scroll_speed.y)
+					#else
+						#define layer0_scroll layer0_normal_tile_scroll_speed
+						#define layer1_scroll layer1_normal_tile_scroll_speed
+						
+						#define foam_scroll foam_tile_scroll_speed
+					#endif
+							
+					#ifdef WORLD_XY_AS_UV					
+						o.uv = float4(	(wp.xy / layer0_normal_tile_size) + time * layer0_scroll,
+										(wp.xy / layer1_normal_tile_size) + time * layer1_scroll);					
+						
+						tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, float3(-1,0,0), float3(0,-1,0), input.normal, (float3x3)world);				
+						
+						#ifdef BLEND_TO_PERLIN_NOISE
+							o.perlin_uv.xy = (wp.xy / perlin_noise_tile_size);
+						#endif
+
+						#ifdef FOAM
+							o.foam_uv = float2((wp.xy / foam_tile_size) + time * foam_scroll);
+						#endif
+					#else
+						o.uv = float4(	(input.uv * layer0_normal_tile_scale) + time * layer0_scroll,
+										(input.uv * layer1_normal_tile_scale) + time * layer1_scroll);					
+						
+						tspace_transform_transpose(o.tsm0, o.tsm1, o.tsm2, input.tangent, input.binormal, input.normal, (float3x3)world);								
+						
+						#ifdef BLEND_TO_PERLIN_NOISE
+							o.perlin_uv.xy = (wp.xy * perlin_noise_tile_size);
+						#endif
+
+						#ifdef FOAM
+							o.foam_uv = float2((input.uv * foam_tile_scale) + time * foam_scroll);
+						#endif												
+					#endif
+					
+					
+					o.w = encode_world_pos(o.position, camera_unprojection);
+					o.wp.w = o.position.z + camera_near_far.x;
+					return o;
+				#endif
+			}
+			
+			half fresnel(half n_dot_e, half bias, half power){
+				return saturate(bias + (1-bias) * pow(1-n_dot_e, power));
+			}
+			
+			#ifdef MASK
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#ifdef ALWAYS		
+					return float4(1,1,1,1);
+				#else
+					return float4(1,1,1,0);
+				#endif
+			}
+			#else
+			#define MAX_WATER_GLOSSINESS 1000
+			
+			float4 ps_main(PS_INPUT input, float vface : VFACE
+				#if defined(GCM)
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float4 wpos : VPOS
+				#endif
+				) : SV_TARGET0 
+			{					
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					half2 screen_uv = wpos.xy / back_buffer_size;
+				#else
+					half2 screen_uv = input.position.xy / back_buffer_size;				
+				#endif
+				
+				float3 view_vector = camera_world._m30_m31_m32 - input.wp;
+				half3 view_dir = normalize(view_vector);
+				
+				#ifdef BLEND_TO_PERLIN_NOISE
+					half blend = saturate((length(view_vector.xy) - perlin_noise_blend.x) / perlin_noise_blend.y);
+					normal_contrast = lerp(1, normal_contrast, blend);
+				
+					half2 perlin0_uv = blend > 0 ? input.perlin_uv.xy * perlin_noise_octaves.x + perlin_noise_tile_scroll_speed * time : 0;
+					half2 perlin1_uv = blend > 0 ? input.perlin_uv.xy * perlin_noise_octaves.y + perlin_noise_tile_scroll_speed * time : 0;
+					half2 perlin2_uv = blend > 0 ? input.perlin_uv.xy * perlin_noise_octaves.z + perlin_noise_tile_scroll_speed * time : 0;				
+					half2 perlin0 = tex2D(blend_normal_map, perlin0_uv).xy;
+					half2 perlin1 = tex2D(blend_normal_map, perlin1_uv).xy;
+					half2 perlin2 = tex2D(blend_normal_map, perlin2_uv).xy;
+					
+					half2 perlin = perlin0 * perlin_noise_gradients.x + perlin1 * perlin_noise_gradients.y + perlin2 * perlin_noise_gradients.z;				
+					
+					input.uv *= blend > 1 ? 0 : 1;
+				#endif
+				
+				half2 tnormal_grad = decode_normal_grad(tex2D(normal_map, input.uv.xy)) + decode_normal_grad(tex2D(normal_map, input.uv.zw));
+								
+				//half3 tnormal = normalize(half3(normal_contrast,normal_contrast,1) * (decode_normal_map(tex2D(normal_map, input.uv.xy)) + decode_normal_map(tex2D(normal_map, input.uv.zw))));
+				#ifdef BLEND_TO_PERLIN_NOISE					
+					half3 tnormal = normalize(half3(normal_contrast * lerp(tnormal_grad, perlin, blend), 1));
+				#else
+					half3 tnormal = normalize(half3(normal_contrast * tnormal_grad, 1));
+				#endif
+				
+				half3 wn = rotate_vector3(tnormal, input.tsm0, input.tsm1, input.tsm2);						
+
+				//wn = vface < 0 ? -wn : wn;
+				
+				// calc under water color
+				half2 refracted_uv = screen_uv + tnormal.xy * refraction_amount;
+				refracted_uv = lerp(refracted_uv, screen_uv, tex2D(light_accumulation, refracted_uv).a);
+				half3 under_water_color = tex2D(light_accumulation, refracted_uv).rgb;
+				
+				// calc fresnel term
+				half n_dot_e = saturate(dot(wn, view_dir));
+				half f = fresnel(n_dot_e, fresnel_settings.x, fresnel_settings.y);				
+				
+				// color extinction 
+				#ifdef COLOR_EXTINCTION
+					float d = gbuffer_decode_depth(tex2D(depth, refracted_uv));					
+					float3 wp = decode_world_pos(input.w, d);					
+					float water_depth = abs(wp.z - input.wp.z);
+					under_water_color = lerp(under_water_color, depth_color, saturate(water_depth / color_extinction));
+				#endif
+				
+				#ifdef GEOMETRY_FADE_OUT
+					float fade_out_depth = gbuffer_decode_depth(tex2D(depth, screen_uv));					
+					half op = saturate(abs(fade_out_depth - input.wp.w) / geometry_fade_out_distance);
+				#else
+					half op = 1;
+				#endif
+				
+				#if defined(FOAM)
+					#if !defined(COLOR_EXTINCTION)
+						float d = gbuffer_decode_depth(tex2D(depth, refracted_uv));						
+						float3 wp = decode_world_pos(input.w, d);
+						float water_depth = abs(wp.z - input.wp.z);											
+					#endif
+					
+					half foam_intensity = 1-saturate(water_depth / foam_fade_in);
+					half4 foam = tex2D(diffuse_map, input.foam_uv) * foam_intensity;
+					surface_albedo += foam.rgb;					
+				#endif
+				
+				// calc surface color
+				half3 s_dir = -sun_direction;
+				half a = saturate(dot(wn, s_dir));
+				#ifdef MASK_WITH_DEFERRED_SHADOW
+					half shadow = tex2D(mask, refracted_uv).r;
+				#else
+					half shadow = 1;
+				#endif
+
+				half3 ambient = lerp(ambient_bottom_color, ambient_top_color, wn.z*0.5+0.5);
+				ambient = lerp(ambient, ambient * (1-saturate(dot(view_dir, wn))), ambient_camera_falloff);				
+				half3 sun = a * sun_color * shadow;
+				half3 surface_color = surface_albedo * ambient + surface_albedo * sun;
+				float gloss = glossiness * MAX_WATER_GLOSSINESS;
+				float specular_energy_conservation = (gloss + 8) / (8 * 3.14159);
+				half3 sun_h = normalize(view_dir + s_dir);
+				float s = specular_energy_conservation * pow(saturate(dot(sun_h, wn)), gloss) * specular_mask;
+				half3 spec_color = sun * s;
+				surface_color += spec_color;
+				
+				#if defined(FOAM)
+					under_water_color += foam.rgb * sun;
+				#endif
+			
+				#if defined(CUBE_ENVIRONMENT_MAPPING)
+					half3 reflection = reflect(view_dir, wn);
+					#if defined(CUBE_FROM_SHADING_ENV)
+						half4 cube = texCUBElod(shading_environment_reflection_map, half4(reflection, (1.0 - glossiness) * 8));
+					#else											
+						half4 cube = texCUBElod(reflection_map, half4(reflection, (1.0 - glossiness) * 8));
+					#endif					
+					#ifdef CUBE_AS_RGBM
+						cube.rgb = rgbm_decode(cube);
+					#endif					
+					surface_color += cube * specular_mask * lerp(cube_environment_intensity_shadow, cube_environment_intensity_sun, a * shadow);	
+				#endif								
+				
+				// lerp between them				
+				half3 c = lerp(under_water_color, surface_color, f);
+				
+				return apply_fog(float4(c, op), input.wp.xyz, input.wp.w);
+			}	 
+			#endif
+		"""
+	}
+	
+	fog_plane = { 
+		includes = [ "common", "gbuffer_access" ]
+		
+		samplers = {
+			depth = { sampler_states = "clamp_point" }
+		}	
+		
+		code="""				
+			sampler2D depth;
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				float3 normal : NORMAL;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float4 plane_eq : TEXCOORD0;
+				float4 w : TEXCOORD1;				
+			};			
+			
+			CBUFFER_START(c0)
+				float4x4 world;
+				float4x4 view_proj;
+				float3 fog_color;   // exports={ name="Fog Color" type="vector3" value=[0.5 0.5 0.5] min=[0 0 0] max=[8 8 8] step=[0.001 0.001 0.001] }
+				float fog_distance; // exports={ name="Fog Distance" type="scalar" value=10 min=0.01 max=200 step=0.01 }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+								
+				float3 wp = mul(input.position, world);
+				o.position = mul(float4(wp,1), view_proj);
+
+				float3 wnormal = mul(input.normal, (float3x3)world);
+				o.plane_eq = float4(wnormal, dot(wnormal, wp));
+				
+				o.w = encode_world_pos(o.position, camera_unprojection);
+				return o;
+			}
+			
+			half4 ps_main(PS_INPUT input
+				#if defined(GCM)
+					, float4 wpos : WPOS
+				#elif defined(X360) || defined(GL2)
+					, float4 wpos : VPOS
+				#endif
+				) : SV_TARGET0 
+			{					
+				#if defined(GCM) || defined(X360) || defined(GL2)
+					half2 screen_uv = wpos.xy / back_buffer_size;
+				#else
+					half2 screen_uv = input.position.xy / back_buffer_size;				
+				#endif
+
+				float d = gbuffer_decode_depth(tex2D(depth, screen_uv));
+				float3 wp = decode_world_pos(input.w, d);
+				
+				float distance_to_plane = abs(dot(wp, input.plane_eq.xyz) - input.plane_eq.w);
+								
+				return half4(fog_color, saturate(distance_to_plane / fog_distance));				
+			}	
+		"""
+	}	
+	
+	eye_highlight = { 
+		includes = [ "common", "gbuffer_access", "skinning" ]
+				
+		code="""
+			struct VS_INPUT {
+				float4 position : POSITION;
+				SKIN_INPUT
+				float3 normal : NORMAL;
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				float3 normal : TEXCOORD0;
+				float3 view_vector : TEXCOORD1;
+			};			
+			
+			CBUFFER_START(c0)
+				float4x4 world;
+				float4x4 view_proj;
+				float3 sun_color;
+				float3 sun_direction;
+				float3 highlight_tint; // exports={ name="Tint" type="vector3" value=[1.0 1.0 1.0] min=[0 0 0] max=[1 1 1] step=[0.001 0.001 0.001] }
+				float2 highlight_offset; // exports={ name="Offset" type="vector2" value=[0.0 0.0] min=[-1 -1] max=[1 1] step=[0.001 0.001] }
+				float highlight_glossiness; // exports={ name="Glossiness" type="scalar" value=250.0 min=0.1 max=5000 step=1 }
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				
+				float4 position;
+				float3 normal;
+				#ifdef SKINNED					
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);										
+					normal = skin_vector(input.normal, input.blendindices, input.blendweights);
+				#else
+					position = input.position;			
+					normal = input.normal;
+				#endif				
+				
+				float3 wp = mul(position, world);
+				o.position = mul(float4(wp,1), view_proj);
+				o.normal = mul(normal, (float3x3)world);
+				
+				float3 cp = camera_pos + camera_world._m00_m01_m02 * highlight_offset.x + camera_world._m20_m21_m22 * highlight_offset.y;				
+				o.view_vector = normalize(cp - wp);				
+				
+				return o;
+			}
+			
+			half4 ps_main(PS_INPUT input) : SV_TARGET0 
+			{
+				float3 view_vector = normalize(input.view_vector);
+				float3 wn = normalize(input.normal);
+				//float3 ldir = normalize(lerp(sun_direction, view_vector, 0.5));
+				float3 ldir = normalize(-sun_direction);
+				float3 h = normalize(ldir + view_vector);
+				float a = saturate(dot(h, wn));
+				//float a = saturate(dot(view_vector, wn));
+				float glossiness = highlight_glossiness;
+				float specular_energy_conservation = (glossiness + 8) / (8 * 3.14159);
+				float3 c = highlight_tint * sun_color * pow(a, glossiness) * specular_energy_conservation;				
+				
+				return float4(c,1);
+			}	
+		"""
+	}
+		
+	pvs_bake = {
+		includes = [ "common", "gbuffer_access", "skinning", "vegetation_bending" ]
+		
+		samplers = {
+			defined_ONE_BIT_ALPHA = {
+				defined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {
+					material_map = { sampler_states = "wrap_linear_srgb" }
+				}
+				ndefined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {
+					diffuse_map = { sampler_states = "wrap_linear_srgb" }
+				}
+			}	
+		}
+		
+		code = """
+			#if defined(ONE_BIT_ALPHA)
+				#define HAS_UV
+			#endif			
+			
+			#if defined(ONE_BIT_ALPHA)
+				#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)
+					sampler2D material_map;
+				#else
+					sampler2D diffuse_map;
+				#endif
+			#endif			
+			
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#if defined(HAS_UV)
+					float2 uv : TEXCOORD0;
+				#endif				
+			};
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(HAS_UV)
+					float2 uv : TEXCOORD0;
+				#endif
+			};
+			
+			CBUFFER_START(c0)
+				#ifdef CAMERA_LOCK_XY
+					float4x4 world;
+					float4x4 view;
+					float4x4 proj;
+				#endif
+				float4x4 world_view_proj;
+				float primitive_offset;
+				float mesh_id;
+				#if defined(ONE_BIT_ALPHA) && defined(EXTERNAL_ALPHA_REF)
+					float external_alpha_ref;
+				#endif				
+			CBUFFER_END
+			
+			PS_INPUT vs_main(VS_INPUT input) {
+				PS_INPUT o;
+				float4 position = input.position;
+				float4 p;
+				#if defined(CAMERA_LOCK_XY)
+					float3 wp = mul(position, world);
+					#ifdef CAMERA_LOCK_Z
+						view._m30_m31_m32 = float3(0,0,0);
+					#else
+						view._m30_m31 = float2(0,0);
+					#endif
+					p = mul(mul(float4(wp,1),view), proj);
+				#else
+					p = mul(position, world_view_proj);
+				#endif
+				
+				o.position = p;
+				#ifdef PROJECT_TO_FAR_PLANE
+					o.position.z = o.position.w;
+				#endif
+				
+				#ifdef HAS_UV
+					o.uv = input.uv;
+				#endif
+				
+				return o;
+			}
+			
+			float4 ps_main(PS_INPUT input, uint primitive_id : SV_PrimitiveID) : SV_TARGET0 
+			{
+				#if defined(ONE_BIT_ALPHA)
+					#if defined(EXTERNAL_ALPHA_REF)
+						half alpha_ref = external_alpha_ref;
+					#else
+						half alpha_ref = ONE_BIT_ALPHA_REF;
+					#endif
+					
+					#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)						
+						one_bit_alpha_mask(tex2D(material_map, input.uv).b, alpha_ref);
+					#else
+						one_bit_alpha_mask(tex2D(diffuse_map, input.uv).a, alpha_ref);
+					#endif
+				#endif
+				
+				return float4(mesh_id, primitive_offset + primitive_id, 0, 1);
+			}
+		"""
+	}
+	
+	ao_bake = {
+		includes = [ "common", "skinning", "vegetation_bending" ]
+		
+		samplers = {
+			defined_DIFFUSE_MAP = {
+				diffuse_map = { sampler_states = "wrap_linear" }				
+			}			
+			defined_ONE_BIT_ALPHA = {
+				defined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {
+					material_map = { sampler_states = "wrap_linear_srgb" }	
+				}
+				ndefined_ONE_BIT_ALPHA_FROM_MATERIAL_B = {					
+					diffuse_map = { sampler_states = "wrap_linear_srgb" }
+				}				
+			}		
+		}	
+		
+		instance_data = {
+			defined_INSTANCED = {
+				world = { type = "matrix4x4" }
+			}
+		}		
+		
+		code="""
+			#if defined(VEGETATION_BENDING) || defined(INSTANCED) || defined(CAMERA_LOCK_XY)
+				#define NEEDS_WORLD_SPACE
+			#endif
+			
+			#if defined(ONE_BIT_ALPHA) //|| defined(DIFFUSE_MAP)
+				#define HAS_UV
+			#endif
+		
+			struct VS_INPUT {
+				float4 position : POSITION;
+				#if defined(HAS_UV)
+					float2 uv : TEXCOORD0;
+				#endif
+				SKIN_INPUT
+				#if defined(VEGETATION_BENDING)
+					float4 color : COLOR0;
+					float3 normal : NORMAL;
+				#endif				
+			};
+			/*
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				uint rt_index : SV_RenderTargetArrayIndex;
+			};
+			*/
+			
+			struct PS_INPUT {
+				float4 position : SV_POSITION;
+				#if defined(HAS_UV)
+					float2 uv : TEXCOORD0;
+				#endif				
+				#if defined(NEEDS_WORLD_SPACE)
+					float3 wp : TEXCOORD1;
+				#endif
+			};
+			
+			CBUFFER_START(c0)
+				#if defined(NEEDS_WORLD_SPACE)
+					float4x4 world;
+					float4x4 view_proj;
+					#if defined(CAMERA_LOCK_XY)
+						float4x4 view;
+						float4x4 proj;
+					#endif
+				#else
+					float4x4 world_view_proj;
+				#endif				
+				#if defined(ONE_BIT_ALPHA) && defined(EXTERNAL_ALPHA_REF)
+					float external_alpha_ref;
+				#endif
+				float3 sun_direction;
+				//float4x4 patch_view;
+			CBUFFER_END
+			
+			#if defined(DIFFUSE_MAP)
+				sampler2D diffuse_map;
+			#endif
+			
+			#if defined(ONE_BIT_ALPHA)
+				#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)
+					sampler2D material_map;
+				#elif !defined(DIFFUSE_MAP)
+					sampler2D diffuse_map;
+				#endif
+			#endif			
+			
+			#if defined(INSTANCED) && defined(D3D11)
+				Buffer<float4> idata;
+				float ioffset;
+			#endif
+			
+			PS_INPUT vs_main(VS_INPUT input
+				#if defined(INSTANCED) && defined(D3D11)
+					, uint instance_id : SV_InstanceId
+				#endif
+				) 
+			{
+				PS_INPUT o;
+				
+				float4 position;
+				#ifdef SKINNED
+					position = float4(skin_point(input.position, input.blendindices, input.blendweights), 1);					
+				#else								
+					position = input.position;
+				#endif
+				
+				#if defined(INSTANCED) && defined(D3D11)
+					uint offset = (uint)ioffset;
+					world[0] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 0));
+					world[1] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 1));
+					world[2] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 2));
+					world[3] = idata.Load(offset + (instance_id*IDATA_STRIDE + IDATA_world + 3));
+				#endif				
+				
+				float4 p;
+				#if defined(NEEDS_WORLD_SPACE)				
+					float4 wp = mul(position, world);
+					/*#if defined(VEGETATION_BENDING)
+						float3 op = world._m30_m31_m32;
+						float3 wnormal = mul(input.normal, (float3x3)world);
+						wp = vegetation_bending(op, wp, wnormal, input.color, input.position); //TODO: decode_vertex_color(input.color);
+					#endif*/
+					
+					#if defined(CAMERA_LOCK_XY)		
+						#ifdef CAMERA_LOCK_Z
+							view._m30_m31_m32 = float3(0,0,0);
+						#else
+							view._m30_m31 = float2(0,0);
+						#endif
+						p = mul(mul(wp,view), proj);
+					#else
+						p = mul(position, view_proj);
+					#endif
+					o.wp = wp.xyz;
+				#else
+					p = mul(position, world_view_proj);
+				#endif
+				o.position = p;
+				
+				#if defined(PROJECT_TO_FAR_PLANE)
+					o.position.z = o.position.w;
+				#endif				
+				
+				#ifdef HAS_UV
+					o.uv = input.uv;
+				#endif
+				return o;
+			}
+			
+			float4 ps_main(PS_INPUT input) : SV_TARGET0 {
+				#if defined(ONE_BIT_ALPHA)
+					#if defined(EXTERNAL_ALPHA_REF)
+						half alpha_ref = external_alpha_ref;
+					#else
+						half alpha_ref = ONE_BIT_ALPHA_REF;
+					#endif
+					
+					#if defined(ONE_BIT_ALPHA_FROM_MATERIAL_B)						
+						one_bit_alpha_mask(tex2D(material_map, input.uv).b, alpha_ref);
+					#else
+						one_bit_alpha_mask(tex2D(diffuse_map, input.uv).a, alpha_ref);
+					#endif
+				#endif
+				
+				#ifdef SKYDOME
+					float3 view_vector = normalize(camera_pos - input.wp);					
+					float sun = saturate(dot(sun_direction, view_vector)) > (1-0.05235) ? 1 : 0;
+					return float4(1,sun,1,1);
+				#else
+					return float4(0,0,0,0);
+				#endif
+			}	
+		"""
+	}
+}  
+   
+shaders = {
+	base = { 
+		editor_options = [
+			{
+				name="Vertex Modifiers"
+				options = [
+					{ name="Segmented Skinning" define="SKINNED_1WEIGHT" condition="!SKINNED_2WEIGHTS && !SKINNED_3WEIGHTS && !SKINNED_4WEIGHTS" tool_tip="Skin vertices to one weight."  }
+					{ name="2 Weight Skinning" define="SKINNED_2WEIGHTS" condition="!SKINNED_1WEIGHT && !SKINNED_3WEIGHTS && !SKINNED_4WEIGHTS" tool_tip="Skin vertices to two weights." }
+					{ name="3 Weight Skinning" define="SKINNED_3WEIGHTS" condition="!SKINNED_1WEIGHT && !SKINNED_2WEIGHTS && !SKINNED_4WEIGHTS" tool_tip="Skin vertices to three weights." }
+					{ name="4 Weight Skinning" define="SKINNED_4WEIGHTS" condition="!SKINNED_1WEIGHT && !SKINNED_2WEIGHTS && !SKINNED_3WEIGHTS" tool_tip="Skin vertices to four weights." }
+					{ name="Double Sided" define="DOUBLE_SIDED" tool_tip = "Render both back facing and front facing triangles." }
+					{ name="Vegetation Animation" define="VEGETATION_BENDING" tool_tip = "Enable simple vertex animation useful for animating leaves and similar.\nDetails: http://http.developer.nvidia.com/GPUGems3/gpugems3_ch16.html"}
+					{ name="Instancing" define="INSTANCED" condition="!BRUSH_INSTANCED && !SKINNED_1WEIGHT && !SKINNED_2WEIGHTS && !SKINNED_3WEIGHTS && !SKINNED_4WEIGHTS" tool_tip="Group identical batches and render them in one draw call." }	
+					{ name="Terrain Undergrowth Instancing" define="BRUSH_INSTANCED" condition="!INSTANCED" tool_tip = "Instancing for procedurally placed terrain undergrowth." }
+				]
+			}
+
+			{
+				name="Material"
+				options = [
+					{ name="Skin" define="SKIN" condition="!CLOTH_SHADING && !COLORED_SPECULAR" tool_tip="Screen-space subsurface scattering tweaked for skin shading.\nDetails:http://www.iryoku.com/sssss/" }
+					{ name=" - Subsurface Scattering Map" define="SUBSURFACE_SCATTERING_MAP" condition="SKIN" tool_tip="Control amount of subsurface from a texture.\nAmount is extracted from the green channel."  }
+					{ name="Cloth" define="CLOTH_SHADING" condition="!SKIN && !COLORED_SPECULAR" tool_tip="Enables Naughty-dog-style cloth shading.\nDetails: http://tinyurl.com/d67w5ze" }
+					{ name="  - Mask Settings With Vertex Color" define="CLOTH_SHADING_VC_MASK" condition="CLOTH_SHADING" tool_tip="Mask Inner & Rim Lobe Settings With Vertex Color\nRed:Inner, Green:Rim"}	
+					{ name="Metal" define="COLORED_SPECULAR" condition="!SKIN && !CLOTH_SHADING" tool_tip="Turn on colored specular."}
+				]
+			}
+	
+			{
+				name="Texture Layers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" tool_tip="Sample material albedo color from a diffuse texture." }
+					{ name="- Use UV2 to sample Diffuse Map" define="DIFFUSE_MAP_UNIQUE_UV" tool_tip="Sample diffuse texturing using UV-channel 2 instead of UV-channel 1." }
+					{ name="Normal Map" define="NORMAL_MAP" tool_tip="Sample per pixel normal from a tangent space normal map." }
+					{ name="Material Map" define="MATERIAL_MAP" tool_tip="Sample specular and glossiness from Red and Green channels of a material map.\nBlue channel is unused and can be used as an auxilary channel.\nMaterial Map in sRGB for increased precision." }
+					{ name="- Use UV4 to sample Material Map" define="MATERIAL_MAP_UNIQUE_UV" tool_tip="Sample Material Map from UV-channel 4 instead of UV-channel 1." }
+					{ name="Ambient Occlusion Map" define="AMBIENT_OCCLUSION_MAP" tool_tip="Sample pre-baked ambient occlusion from an ambient occlusion texture.\nContents in red-channel." }
+					{ name="Ambient Occlusion from Material Map.a" define="AMBIENT_OCCLUSION_MATERIAL_MAP" condition="!AMBIENT_OCCLUSION_MAP" tool_tip="Use contents in alpha channel of Material Map as pre-baked ambient occlusion value." }
+					{ name="Masked VC Blend" define="MASKED_VC_BLEND" condition="DIFFUSE_MAP && MATERIAL_MAP" tool_tip="Blend between two sets of textures using vertex alpha and height map in blue channel of Material Map." }
+					{ name="Detail Diffuse Map" define="DETAIL_DIFFUSE_MAP" tool_tip="Enable detailed diffuse texture multiplied with albedo.\nTexture in linear color space."}
+					{ name="Detail Normal Map" define="DETAIL_NORMAL_MAP" condition="NORMAL_MAP" tool_tip="Enable detailed detailed normal texture blended with tangent space normal.\nBlended as:[N.xy+DN.xy. N.z*DN.z]" }
+					{ name="Detail Material Map" define="DETAIL_MATERIAL_MAP" tool_tip="Enable detailed material map where red and green channel gets multiplied with calculated specular and glossiness.\nTexture in linear color space."}
+				]
+			}		
+
+			{
+				name="UV Manipulation"
+				options = [
+					{ name="Diffuse Map UV Animation" define="DIFFUSE_UV_ANIM" condition="DIFFUSE_MAP && !DIFFUSE_UV_OFFSET && !DIFFUSE_UV_ROTATION_ANIM" tool_tip="Turn on UV-animation for diffuse texture." }
+					{ name="Diffuse Map UV Offset" define="DIFFUSE_UV_OFFSET" condition="DIFFUSE_MAP && !DIFFUSE_UV_ANIM && !DIFFUSE_UV_ROTATION_ANIM" tool_tip="Turn on UV-offset for diffuse texture." }
+					{ name="Diffuse Map UV Rotation" define="DIFFUSE_UV_ROTATION_ANIM" condition="DIFFUSE_MAP && !DIFFUSE_UV_OFFSET && !DIFFUSE_UV_ANIM" tool_tip="Turn on rotating UV-animation for diffuse texture." }
+					{ name="Normal Map UV Animation" define="NORMAL_UV_ANIM" condition="NORMAL_MAP && !NORMAL_UV_OFFSET" tool_tip="Turn on UV-animation for normal map."  }
+					{ name="Normal Map UV Offset" define="NORMAL_UV_OFFSET" condition="NORMAL_MAP && !NORMAL_UV_ANIM" tool_tip="Turn on UV-offset for normal map."}
+					{ name="Self Illumination Map UV Animation" define="SELF_ILLUMINATION_UV_ANIM" condition="SELF_ILLUMINATION_MAP && !SELF_ILLUMINATION_UV_OFFSET && !SELF_ILLUMINATION_UV_ROTATION_ANIM" tool_tip="Turn on UV-animation for self-illumination texture." }
+					{ name="Self Illumination UV Offset" define="SELF_ILLUMINATION_UV_OFFSET" condition="SELF_ILLUMINATION_MAP && !SELF_ILLUMINATION_UV_ANIM && !SELF_ILLUMINATION_UV_ROTATION_ANIM" tool_tip="Turn on UV-offset for self-illumination texture." }	
+					{ name="Self Illumination UV Rotation" define="SELF_ILLUMINATION_UV_ROTATION_ANIM" condition="SELF_ILLUMINATION_MAP && !SELF_ILLUMINATION_UV_ANIM && !SELF_ILLUMINATION_UV_OFFSET" tool_tip="Turn on rotating UV-animation for self-illumination texture." }
+					{ name="Material Map UV Animation" define="MATERIAL_UV_ANIM" condition="MATERIAL_MAP && !MATERIAL_UV_OFFSET && !MATERIAL_UV_ROTATION_ANIM" tool_tip="Turn on UV-animation for material texture."  }
+					{ name="Material Map UV Offset" define="MATERIAL_UV_OFFSET" condition="MATERIAL_MAP && !MATERIAL_UV_ANIM && !MATERIAL_UV_ROTATION_ANIM" tool_tip="Turn on UV-offset for material texture." }	
+					{ name="Material UV Rotation" define="MATERIAL_UV_ROTATION_ANIM" condition="MATERIAL_MAP && !MATERIAL_UV_ANIM && !MATERIAL_UV_OFFSET" tool_tip="Turn on rotating UV-animation for material texture." }
+				]
+			}			
+			
+			{
+				name="Self Illumination"
+				options = [
+					{ name="Self Illumination Map" define="SELF_ILLUMINATION_MAP" tool_tip="Sample self illumination / emissive color from an emissive texture." }
+					{ name="- Use UV3 to sample Self Illumination Map" define="SELF_ILLUMINATION_MAP_UNIQUE_UV" condition="SELF_ILLUMINATION_MAP" tool_tip="Sample emissive texture using UV-channel 3 instead of UV-channel 1." }					
+					{ name="Tint Self Illumination With Material Color" define="SELF_ILLUMINATION_TINT_MATERIAL" condition="SELF_ILLUMINATION_MAP" tool_tip="Tint emissive color using material color variable." }
+				]
+			}
+			
+			{
+				name="Environment Mapping"				
+				options = [
+					{ name="Cube Environment Mapping" define="CUBE_ENVIRONMENT_MAPPING" tool_tip="Enables cube environment reflections.\nReflection respects the final G-buffer normal and are rendered as an extra pass." }
+					{ name=" - Cube as RGBM" define="CUBE_AS_RGBM" condition="CUBE_ENVIRONMENT_MAPPING" tool_tip="Reflection texture encoded as RGBM. Cube maps generated in Bitsquid are encoded this way.\nNote: Requires Deferred Cube Environment Mapping to be enabled." }
+					{ name=" - Cube from shading environment" define="CUBE_FROM_SHADING_ENV" condition="CUBE_ENVIRONMENT_MAPPING" tool_tip="Use reflection map defined in lighting environment. \nNote: Requires Deferred Cube Environment Mapping to be enabled." }
+				]
+			}
+			
+			{
+				name="Alpha Masking"
+				options = [
+					{ name="One Bit Alpha" define="ONE_BIT_ALPHA" condition="DIFFUSE_MAP || MATERIAL_MAP" tool_tip="Enable 1-bit alpha masking. Reference value is 0.5 and mask in diffuse alpha." }
+					{ name="Alpha From Material Map" define="ONE_BIT_ALPHA_FROM_MATERIAL_B" condition="ONE_BIT_ALPHA && MATERIAL_MAP" tool_tip="Mask value from blue channel of material map." }	
+					{ name="One Bit Alpha Reference" define="EXTERNAL_ALPHA_REF" condition="ONE_BIT_ALPHA" tool_tip="Reference value from material variable instead of hardcoded 0.5" }
+					{ name="Soft Alpha Test (tangent)" define="SOFT_ALPHA_TEST_TANGENT" condition="ONE_BIT_ALPHA" tool_tip="Run extra pass that tries to soften edges of 1-bit alpha masked geometry by doing a streak blur in screen space tangent direction." }
+					{ name="Dissolve Alpha Over Distance" define="DISSOLVE_ALPHA_OVER_DISTANCE" condition="ONE_BIT_ALPHA" tool_tip="Animate reference clip value to zero based on distance between pixel and camera." }					
+				]
+			}	
+			
+			{
+				name="Tinting"
+				options = [
+					{ name="Tint Diffuse With Vertex Color RGB" define="VC_TINT_RGB" tool_tip="Tint albedo color with vertex color rgb.\nVertex Colors in gamma 2.0 and converted to linear space before multiplying with albedo." }
+					{ name="Compressed Vertex Colors" define="VC_COMPRESSED" tool_tip="Treat vertex colors as compressed." }
+					{ name="Tint Diffuse With Material Color" define="MATERIAL_TINT_RGB" tool_tip="Tint albedo color with material tint color.\nBlend done as: [albedo*material_color*2]\nMaterial Color in linear color space." }
+				]
+			}
+			
+			{
+				name="Baked Lighting"
+				options = [
+					{ name="Vertex Baked Ambient Occlusion" define="BAKED_VERTEX_AMBIENT_OCCLUSION" tool_tip="Pipe blue channel of vertex color channel 1 as ambient occlusion value." }
+				]
+			}
+			
+			{
+				name="Special"
+				options = [
+					{ name="Blend Normal To World Z+" define="BLEND_NORMAL_WORLD_POSITIVE_Z" condition="BLEND_NORMAL_OBJECT_POSITIVE_Z" tool_tip="Blend world space normal towards world up axis based on material variable." }
+					{ name="Blend Normal To Object Z+" define="BLEND_NORMAL_OBJECT_POSITIVE_Z" condition="BLEND_NORMAL_WORLD_POSITIVE_Z" tool_tip="Blend world space normal towards object up axis based on material variable." }			
+					{ name="Mask Blend Normal With Material Map" define="MASK_BLEND_NORMAL_WITH_MATERIAL" condition="BLEND_NORMAL_OBJECT_POSITIVE_Z || BLEND_NORMAL_WORLD_POSITIVE_Z" tool_tip="Mask blend value with blue channel of Material Map."}
+				]
+			}
+			
+			{
+				name="Transparency"
+				options = [
+					{ name = "One Layer Semi Transparency" define="SEMI_TRANSPARENCY" condition="!JITTERED_TRANSPARENCY" tool_tip="Uses stippling to render one layer of transparency.\nRunning in half shading frequency and patched up with extra pass." }
+					{ name = "Jittered Transparency" define="JITTERED_TRANSPARENCY" condition="!SEMI_TRANSPARENCY" tool_tip="Uses stippling to control opacity in 4 steps." }
+				]					
+			}
+			
+			{
+				name="Quality"
+				options = [
+					{ name="HiQuality Normals" define="HIQUALITY_GBUFFER_NORMALS" tool_tip="Uses Crytek's best-fit normals method when storing normals in G-buffer.\nDetails: http://tinyurl.com/354j6nq" }	
+				]				
+			}
+			
+			{ 
+				name="Performance"
+				options = [
+					{ name="Depth Prepass" define="DEPTH_PREPASS" tool_tip="Enable rendering of batch in depth prepass layer." }
+				]
+			}
+			
+			{
+				name="Hardware Tesselation (DX11)"
+				options = [
+					{ name="Displacement Mapping" define="DX11_DISPLACEMENT_MAPPING" tool_tip="Turn on vector displacement mapping." }
+					{ name="Height Map Displacement" define="HEIGHT_MAP_DISPLACEMENT" condition="DX11_DISPLACEMENT_MAPPING" tool_tip="Treat displacement map as height map instead of vector map." }
+					{ name="Mask Height Map with Vertex Color Alpha" define="MASK_HEIGHT_MAP_WITH_VC_ALPHA" condition="HEIGHT_MAP_DISPLACEMENT" tool_tip="Blend between zero displacement and full height map displacement based on alpha channel in the vertex colors." }
+					{ name="Detail Displacement Mapping" define="DETAILED_DISPLACEMENT_MAPPING" condition="DX11_DISPLACEMENT_MAPPING" tool_tip="Enable detailed height map displacement.\nHeight in blue channel."}
+					{ name="Detail Displacement Mapping From Alpha" define="DETAIL_DISPLACEMENT_FROM_ALPHA" condition="DETAILED_DISPLACEMENT_MAPPING" tool_tip="Use alpha channel instead of blue channel for detail height map displacement." }
+					{ name="Phong Tessellation" define="PHONG_TESSELLATION" condition="DX11_DISPLACEMENT_MAPPING" tool_tip="Enable phong tessellation." }
+				]
+			}
+			
+			{ 
+				name="Mobile Optimizations"
+				options = [
+					{ name="Fog Color Only" define="FOG_COLOR_ONLY" tool_tip="Disable all lighting calculations and texture sampling, output the fog color." }
+					{ name="Disable Dynamic Lightning" define="DISABLE_VTX_LIGHTNING" tool_tip="Disable dynamic lighting from local lights." }
+					{ name="Masked VC Tint" define="MASKED_VC_TINT" condition="!MASKED_VC_TINT_INV && !FOG_COLOR_ONLY" tool_tip="A cheap & hacky variation of 'Masked VC Blend' but instead of sampling texture blend towards a tint color." }
+					{ name="Masked VC Tint Inverted" define="MASKED_VC_TINT_INV" condition="!MASKED_VC_TINT && !FOG_COLOR_ONLY" tool_tip="Same as Maked VC Tint but blend reference is inverted." }
+				]
+			}			
+		]
+		
+		contexts = {
+			shadow_caster = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="MOBILE"
+					pass = [
+					
+					]
+					fail = [
+						{ hlsl_shader="depth_only" render_states="shadow_caster" }
+					]
+				}]			
+			}
+			pvs_bake = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="D3D11"
+					pass = [
+						{ hlsl_shader="pvs_bake" render_states="pvs_bake" }
+					]
+					fail = [
+						
+					]
+				}]			
+			}
+			ao_bake = {
+				passes_sort_mode="immediate"
+				passes = [
+					{ hlsl_shader="ao_bake" render_states="ao_bake" }
+				]				
+			}
+			
+			voxelize = {
+				passes_sort_mode="immediate"
+				passes = [
+					{ hlsl_shader="base_voxelize" render_states="voxelize" }
+				]				
+			}
+			
+			default = {	
+				passes = [{ 	
+					defined = "MOBILE"
+					pass = [{
+						defined ="SEMI_TRANSPARENCY" 
+						pass = [
+							{ layer="transparent" hlsl_shader="mobile_forward_base" defines="SEMI_TRANSPARENCY_RESOLVE" render_states="opacity" }
+						]
+						fail = [
+							{
+								defined ="OES2"
+								pass = [
+									{
+										defined = "DISABLE_VTX_LIGHTNING"
+										pass = [
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" }
+										]
+										fail = [
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" defines="NO_LIGHTS" branch_key="forward_lighting_disabled"}
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" defines="LIGHT0" branch_key="forward_lighting_one_light"}
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" defines="LIGHT0 LIGHT1" branch_key="forward_lighting_two_lights"}
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" defines="LIGHT0 LIGHT1 LIGHT2" branch_key="forward_lighting_three_lights"}
+											{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" defines="LIGHT0 LIGHT1 LIGHT2 LIGHT3" branch_key="forward_lighting_four_lights"}
+										]
+									}
+								]
+								fail = [
+									{ layer="opaque" hlsl_shader="mobile_forward_base" render_states="gbuffer_ambient" }
+									{ layer="wireframe" hlsl_shader="mobile_forward_base" defines="DRAW_WIREFRAME" render_states="wireframe" branch_key="dev_wireframe" }
+								]
+							}
+						]
+					}]
+					fail = [{ 
+						defined="DX11_0 DX11_DISPLACEMENT_MAPPING" 
+						pass = [
+							{ 
+								defined="ONE_BIT_ALPHA"
+								pass = [
+									{ layer="gbuffer_alpha_masked" hlsl_shader="gbuffer_displacement_mapping_base" render_states="gbuffer_material" }	
+								]
+								fail = [
+									{ layer="gbuffer" hlsl_shader="gbuffer_displacement_mapping_base" render_states="gbuffer_material" }	
+								]
+							}
+							{ layer="wireframe" hlsl_shader="gbuffer_displacement_mapping_base" defines="DRAW_WIREFRAME" render_states="wireframe" branch_key="dev_wireframe" }									
+						]
+						fail = [
+							{ 
+								defined="DEPTH_PREPASS" 
+								pass = [
+									{ layer="depth_prepass" hlsl_shader="depth_only" render_states="depth_only" }
+								]
+							}			
+							{ 
+								defined = "SELF_ILLUMINATION_MAP"
+								pass = [
+									{ 
+										defined = "X360"
+										pass = [
+											{ layer="gbuffer" hlsl_shader="gbuffer_base" render_states="gbuffer_material" }
+											{ layer="semi_transparency" hlsl_shader="forward_base" defines="EMISSIVE_PASS" render_states="gbuffer_ambient_zequal_add" }
+										]
+										fail = [
+											{ layer="gbuffer_self_illumination" hlsl_shader="gbuffer_base" render_states="gbuffer_material" }
+										]
+									}
+								]
+								fail = [									
+									{ 										
+										defined = "ONE_BIT_ALPHA"
+										pass = [
+											{ layer="gbuffer_alpha_masked" hlsl_shader="gbuffer_base" render_states="gbuffer_material" }
+										] 
+										fail = [
+											{ layer="gbuffer" hlsl_shader="gbuffer_base" render_states="gbuffer_material" }
+										]
+									}									
+								]
+							}
+							{ 
+								defined ="SEMI_TRANSPARENCY" 
+								pass = [
+									{ layer="semi_transparency" hlsl_shader="forward_base" defines="SEMI_TRANSPARENCY_RESOLVE" render_states="gbuffer_material" }
+								]
+							}
+							{
+								defined = "CUBE_ENVIRONMENT_MAPPING"
+								pass = [
+									{ layer="reflections" hlsl_shader="forward_base" render_states="gbuffer_ambient_zequal_add" }
+								]
+							}
+							
+							{ layer="wireframe" hlsl_shader="gbuffer_base" defines="DRAW_WIREFRAME" render_states="wireframe" branch_key="dev_wireframe" }
+							
+							{
+								defined = "SOFT_ALPHA_TEST_TANGENT"
+								pass = [
+									{ layer="hdr_transparent" hlsl_shader="forward_base" render_states="ambient_no_depth_write" }
+								]
+							}								
+						]
+					}]
+				}]
+			}
+		}
+		
+		compile = {
+			shadow_caster = [ 							       
+				{ defines="MOBILE" render_caps={emulate_mobile=true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="HWSM" platforms = "D3D11 GCM X360 GL2"}
+			]
+			pvs_bake = [
+				{ defines="" platforms="D3D11" }
+			]
+			ao_bake = [
+				{ defines="" platforms="D3D11" }
+			]
+			voxelize = [
+				{ defines="" platforms="D3D11" }
+			]
+			default = [
+				{ defines="MOBILE" render_caps={ emulate_mobile=true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="DX11_0" render_caps={ feature_level="DX11_0" tessellation_enabled = true} platforms="D3D11" }				
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	} 	
+
+	skydome = {
+		editor_options = [
+			{
+				name="Vertex Modifiers"
+				options = [
+					{ name="Lock Camera in XY-plane" define="CAMERA_LOCK_XY" }
+					{ name="Lock Camera in Z-plane" define="CAMERA_LOCK_Z" }
+				]
+			}
+			{
+				name="Pixel Modifiers"
+				options = [
+					{ name="Diffuse Map" define="DIFFUSE_MAP" }
+					{ name=" - RGBM encoded" define = "DIFFUSE_AS_RGBM" }
+				]
+			}
+		]
+		
+		contexts = {			
+			default = {	
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						{ layer="skydome" hlsl_shader="mobile_skydome" defines="PROJECT_TO_FAR_PLANE" render_states="ambient_no_depth_write" }
+					]
+					fail = [
+						{ layer="skydome" hlsl_shader="forward_base" defines="PROJECT_TO_FAR_PLANE SKYDOME" render_states="ambient_no_depth_write" }					
+					]
+				}]				
+			}
+			ao_bake = {
+				passes_sort_mode="immediate"
+				passes = [{					
+					defined="D3D11"
+					pass = [						
+						{ hlsl_shader="ao_bake" defines="PROJECT_TO_FAR_PLANE SKYDOME" render_states="ambient_no_depth_write" }
+					]
+					fail = [						
+					]
+				}]				
+			}			
+			pvs_bake = {
+				passes_sort_mode="immediate"
+				passes = [{
+					defined="D3D11"
+					pass = [
+						{ hlsl_shader="pvs_bake" render_states="pvs_bake" }
+					]
+					fail = [
+						
+					]
+				}]			
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+			pvs_bake = [
+				{ defines=""}
+			]
+			ao_bake = [
+				{ defines="" platforms="D3D11" }
+			]			
+		} 
+	} 	
+
+	water = {
+		editor_options = [
+			{
+				name="UV Generation"
+				options = [
+					{ name="Base UV coordinates on World XY" define="WORLD_XY_AS_UV" }					
+				]
+			}
+			{
+				name="Water Surface Features"
+				options = [
+					{ name="Depth color extinction" define="COLOR_EXTINCTION" }
+					{ name="Geometry Fade out" define="GEOMETRY_FADE_OUT" }
+					{ name="Cube Environment Mapping" define="CUBE_ENVIRONMENT_MAPPING" }
+					{ name=" - Cube as RGBM" define="CUBE_AS_RGBM" }
+					{ name=" - Cube from shading environment" define="CUBE_FROM_SHADING_ENV" tool_tip="Use reflection map defined in lighting environment. \nNote: Requires Deferred Cube Environment Mapping to be enabled." }					
+					{ name="Foam Map" define="FOAM" }
+					{ name="Blend to perlin noise to hide tiling" define="BLEND_TO_PERLIN_NOISE" }
+					{ name="Mask sun with deferred shadows" define="MASK_WITH_DEFERRED_SHADOW" }
+				]
+			}
+
+		]
+		
+		contexts = {
+			default = {	
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="water" hlsl_shader="water" defines="MASK ALWAYS" render_states="water_mask" }
+						{ layer="water" hlsl_shader="water" defines="MASK" render_states="water_mask" }
+						{ layer="water" hlsl_shader="water" render_states="opacity" }
+					]
+				}]				
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	}
+	
+	mobile_water = {
+		editor_options = [
+			{
+				name="Water Surface Options"
+				options = [
+					{ name="Tangent Space Transformation" define="TANGENT_SPACE" }
+				]
+			}
+		]
+		
+		contexts = {
+			default = {	
+				passes = [
+					{ layer="water" hlsl_shader="mobile_water" render_states="opacity" }
+				]				
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2 GL2" }
+			]
+		} 
+	}
+	
+	fog_plane = {
+		editor_options = [
+			{
+				name="Settings"
+				options = [
+					{ name="Inverted: Fog pixels in-front of plane" define="INVERTED" }					
+				]
+			}		
+		]
+		
+		contexts = {
+			default = {
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="fog_volumes" hlsl_shader="fog_plane" render_states="fog_plane" }
+					]
+				}]
+			}			
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 
+	} 	
+	
+	eye_highlight = {
+		editor_options = [
+			{
+				name="Vertex Modifiers"
+				options = [
+					{ name="Segmented Skinning" define="SKINNED_1WEIGHT" }
+					{ name="2 Weight Skinning" define="SKINNED_2WEIGHTS" }
+					{ name="3 Weight Skinning" define="SKINNED_3WEIGHTS" }
+					{ name="4 Weight Skinning" define="SKINNED_4WEIGHTS" }
+				]
+			}		
+		]
+		
+		contexts = {
+			default = {	
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						// 
+					]
+					fail = [
+						{ layer="semi_transparency" hlsl_shader="eye_highlight" render_states="opacity_add" }
+					]
+				}]								
+			}
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }
+				{ defines="" platforms = "D3D11 GCM X360 GL2"} 
+			]
+		} 		
+	}	
+	
+	mobile_ao_plane = {
+		editor_options = [
+			{
+				name="Sphere Occlusion"
+				options = [					
+					{ name="1 Sphere" define="SKINNED_1WEIGHT" }
+					{ name="2 Spheres" define="SKINNED_2WEIGHTS" }
+					{ name="3 Spheres" define="SKINNED_3WEIGHTS" }
+					{ name="4 Spheres" define="SKINNED_4WEIGHTS" }					
+				]
+			}
+		]
+		
+		contexts = {
+			default = {
+				passes = [{
+					defined="MOBILE"
+					pass = [
+						{ layer="decals" hlsl_shader="mobile_ao_plane" render_states="mobile_ao" }
+					]
+					fail = [
+						
+					]
+				}]
+			}			
+		}	
+		
+		compile = {
+			default = [				
+				{ defines="MOBILE" render_caps={ emulate_mobile = true} platforms="D3D11" }
+				{ defines="MOBILE" platforms = "OES2" }				
+			]
+		} 
+	} 	
+} 

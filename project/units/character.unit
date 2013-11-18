@@ -1,0 +1,12 @@
+
+lights = {
+}
+lod = [
+]
+materials = [
+	"units/character"
+]
+renderables = {
+}
+visibility_groups = {
+}

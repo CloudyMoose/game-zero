@@ -1,0 +1,35 @@
+
+config = [
+	"core/performance_hud/performance_hud"
+]
+font = [
+	"core/performance_hud/debug"
+]
+level = [
+	"levels/empty"
+]
+lua = [
+	"lua/boot"
+	"lua/boot_editor"
+	"lua/character"
+	"lua/class"
+	"lua/flow_callbacks"
+	"lua/level"
+	"lua/menu"
+	"lua/scene"
+	"lua/utility"
+]
+material = [
+	"core/performance_hud/gui"
+]
+physics_properties = [
+	"global"
+]
+shading_environment = [
+	"core/rendering/default_outdoor"
+]
+unit = [
+	"core/units/camera"
+	"core/editor_slave/units/skydome/skydome"
+	"units/character"
+]

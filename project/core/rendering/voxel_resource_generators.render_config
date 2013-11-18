@@ -1,0 +1,11 @@
+resource_generators = {
+	generate_mips = {
+		modifiers = [
+			{ type = "generate_mips" target="voxels" }
+		]
+	}
+	clear_voxels = {
+		modifiers = [
+		]
+	}
+}

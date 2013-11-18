@@ -1,0 +1,10 @@
+georgia_partial = {
+	shader = "gui:DIFFUSE_MAP"
+	textures = {
+		diffuse_map = "core/bitsquid_splash/georgia_partial"
+	}
+}
+
+depth_test_disabled = {
+	shader = "gui"
+}

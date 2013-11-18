@@ -1,0 +1,17 @@
+
+actors = [
+	{
+		enabled = true
+		name = "box"
+		node = "box"
+		shapes = [
+			{
+				material = "default"
+				shape = "box"
+				template = "sweeper"
+				type = "convex"
+			}
+		]
+		template = "dynamic"
+	}
+]

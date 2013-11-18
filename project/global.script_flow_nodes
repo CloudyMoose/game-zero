@@ -1,0 +1,14 @@
+nodes = [
+	{
+		name = "Message"
+		args = {
+			Unit = "unit"
+			Offset = "vector3"
+			Text = "string"
+			Size = "float"
+			Color = "vector3"
+			Duration = "float"
+		}
+		function = "FlowCallbacks.message"
+	}
+]

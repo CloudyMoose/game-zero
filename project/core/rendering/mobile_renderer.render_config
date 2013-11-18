@@ -1,0 +1,116 @@
+// ---------------------------------------------------------------------------------------------------- 
+// Configures per platform render caps block 
+
+win_caps = {	
+	feature_level = ""
+	use_deferred_contexts = false
+	emulate_mobile = true
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Configures render settings
+
+render_settings = {	
+	generate_cubemap = false	
+	voxel_cone_tracing = true
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Setup predefined shader pass flags, all flags prefixed with dev_ are used by the tools
+
+shader_pass_flags = [
+	"forward_lighting_disabled",
+	"forward_lighting_one_light"
+	"forward_lighting_two_lights"
+	"forward_lighting_three_lights"
+	"forward_lighting_four_lights"
+	"dev_wireframe"
+]
+
+// ---------------------------------------------------------------------------------------------------
+// Specifies which shader libraries to load at boot up.
+
+shader_libraries = [
+	"core/rendering/base"
+	"core/rendering/default_shaders"
+	"core/rendering/particle_billboard"	
+	"core/rendering/light_bake"
+]	
+
+// ---------------------------------------------------------------------------------------------------
+// Specifies global resources to allocate at start up
+
+global_resources = [
+	{ 
+		type = "static_branch" platform="android"
+		pass = [
+			{ name = "depth_stencil_buffer" type="render_target" depends_on = "back_buffer" w_scale=1 h_scale=1 format="DEPTH16" hint_needs_clearing = true }		
+		]
+		fail = [
+			{ name = "depth_stencil_buffer" type="render_target" depends_on = "back_buffer" w_scale=1 h_scale=1 format="DEPTH_STENCIL" hint_needs_clearing = true }		
+		]
+	}
+	
+	{ type = "static_branch" platform="win" render_settings = "voxel_cone_tracing = true"
+		pass = [
+			{ name = "voxels" type="render_target" width = 256 height = 256 layers = 256 mip_levels=9 image_type="image_3d" format = "R8" hint_needs_clearing = true }
+		]
+	}
+	
+]
+
+// ---------------------------------------------------------------------------------------------------
+// Layer configurations
+
+layer_configs = {
+	default = [
+		{ name = "opaque" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="FRONT_BACK" profiling_scope="opaque"}		
+		{ name = "decals" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="decals"}
+		{ name = "skydome" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="skydome" }
+		{ name = "water" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+		{ name = "wireframe" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" }
+		{ name = "transparent" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+		{ name = "particle_transparent" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+		{ name = "gui" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+	]	
+	overlay = [			
+		{ name = "transparent" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="overlay_transparent"}
+		{ name = "gui" render_targets="back_buffer" depth_stencil_target="depth_stencil_buffer" sort="BACK_FRONT" profiling_scope="transparent" }
+	]	
+}
+
+// ---------------------------------------------------------------------------------------------------
+// resource generators
+
+resource_generators = {
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Lookup table generation - resource generators specified in this array will run _once_ after the renderer has completed its boot process
+	
+lookup_tables = [ ]
+
+// ---------------------------------------------------------------------------------------------------
+// Viewports
+
+viewports = {
+	default = {
+		// resources instanced once per viewport
+		resources = []
+		
+		layer_config = "default"
+		output_rt = "back_buffer"
+		output_dst = "depth_stencil_target"
+	}
+	
+	overlay = {
+		// resources instanced once per viewport
+		resources = []
+		
+		layer_config = "overlay"
+		output_rt = "back_buffer"
+		output_dst = "depth_stencil_target"
+	}
+}
+
+default_shading_environment = "core/rendering/default_outdoor_mobile"

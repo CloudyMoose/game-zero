@@ -1,0 +1,465 @@
+
+Flow = {
+	Connections = [
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "c057aeba-4de3-463d-a311-44cb2eb41898"
+			Id = "31850cfd-df71-4fff-a314-7fa91b982041"
+			ToItem = "Animation Target"
+			ToNode = "346cc8b1-b228-40a3-b1f8-bfe806829fa2"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+				{
+					X = -303.745330810547
+					Y = -18.896240234375
+				}
+				{
+					X = -209.337432861328
+					Y = 143.434997558594
+				}
+				{
+					X = -120.101440429688
+					Y = 193.947448730469
+				}
+				{
+					X = -1.7952880859375
+					Y = 209.312377929688
+				}
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "75df1f84-0aa3-449a-a7d2-ebc1fb73fb42"
+			Priority = 0
+			ToItem = "Start Animation"
+			ToNode = "346cc8b1-b228-40a3-b1f8-bfe806829fa2"
+		}
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "cd99b49b-b2a1-4493-9ec2-afb28ea169cf"
+			Id = "510ab4ee-0645-45f4-a3f4-e572bcf8d19a"
+			ToItem = "Animation Target"
+			ToNode = "8dff32e1-b8ae-424d-aa5c-4448470a8c11"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "8e679994-b960-4b46-8b33-7e2e08963f84"
+			Priority = 0
+			ToItem = "Start Animation"
+			ToNode = "8dff32e1-b8ae-424d-aa5c-4448470a8c11"
+		}
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "43d86377-9316-422f-88e8-38887b33b08a"
+			Id = "0e985f8d-8861-45b2-b922-71639aca3694"
+			ToItem = "Animation Target"
+			ToNode = "401fc2f3-9844-4cc4-b32f-d6dec1e41fb1"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+				{
+					X = -63.5
+					Y = -281.5
+				}
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "9da0e434-34a1-4594-965f-ba79ee864f2b"
+			Priority = 0
+			ToItem = "Start Animation"
+			ToNode = "401fc2f3-9844-4cc4-b32f-d6dec1e41fb1"
+		}
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "84368d50-3b1c-44e0-9e7f-51701b7fe5db"
+			Id = "7a23a703-7cf0-408f-bbd7-8f36187a893f"
+			ToItem = "Animation Target"
+			ToNode = "17b6299f-a076-4a77-896a-feec427d8308"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "6695098e-0afd-46a9-9273-8ac05e18cb6f"
+			Id = "b1cda2bd-390d-4dc1-9798-6ade91d90883"
+			ToItem = "Animation Target"
+			ToNode = "e026385e-3ad0-4256-8be6-1153e2de82b8"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+				{
+					X = -182.5
+					Y = -111.5
+				}
+				{
+					X = 28.5
+					Y = -100.5
+				}
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "3a6126ba-154a-4473-8218-151c586525dc"
+			Priority = 0
+			ToItem = "Start Animation"
+			ToNode = "17b6299f-a076-4a77-896a-feec427d8308"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+				{
+					X = -271.5
+					Y = -121.5
+				}
+				{
+					X = -185.5
+					Y = -17.5
+				}
+				{
+					X = -35.5
+					Y = 25.5
+				}
+				{
+					X = 78.5
+					Y = 25.5
+				}
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "c2b11d5a-eecc-4185-9110-4033841d36c7"
+			Priority = 0
+			ToItem = "Start Animation"
+			ToNode = "e026385e-3ad0-4256-8be6-1153e2de82b8"
+		}
+		{
+			Class = "Bitsquid.Flow.VariableConnection"
+			ControlPoints = [
+			]
+			FromItem = "Unit"
+			FromNode = "6b59d277-a01a-4d30-8204-0dab7ccf7d51"
+			Id = "d4f62194-2d27-434b-9c48-a30bdabb8793"
+			ToItem = "Target"
+			ToNode = "4ecad568-a51e-43cc-a92b-25b781e03267"
+			Type = "Unit"
+		}
+		{
+			Class = "Bitsquid.Flow.EventConnection"
+			ControlPoints = [
+				{
+					X = -323.973999023438
+					Y = -36.75
+				}
+				{
+					X = -261.973999023438
+					Y = 82.25
+				}
+				{
+					X = -181.973999023438
+					Y = 135.25
+				}
+				{
+					X = -68.9739990234375
+					Y = 168.25
+				}
+			]
+			FromItem = "Out"
+			FromNode = "441d414f-e80d-4835-a770-0ba0797c3351"
+			Id = "1b9447f3-deed-431b-a7cf-36bd1259567e"
+			Priority = 0
+			ToItem = "In"
+			ToNode = "4ecad568-a51e-43cc-a92b-25b781e03267"
+		}
+	]
+	Groups = [
+	]
+	Nodes = [
+	]
+}
+Groups = [
+]
+Layers = [
+	"Default"
+]
+LevelObjectSets = {
+	NestedSetNamesBySetName = {
+	}
+	ObjectIdsBySetName = {
+	}
+	VisibleSetNames = [
+	]
+}
+LevelReferences = [
+]
+LightBakeSettings = {
+	ExcludedObjectSets = [
+	]
+	Layers = [
+	]
+}
+Navmeshes = [
+]
+Notes = [
+]
+ParticleEffects = [
+]
+PositionMarkers = [
+]
+Prototypes = [
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "1b503c31-4d1f-43ca-907789b0b210c289"
+		Layer = "Default"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = -50
+			Z = 2
+		}
+		Radius = {
+			X = 50.5
+			Y = 0.5
+			Z = 2
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "ec75b2b2-2802-4a5d-8683e7d79bb2db95"
+		Layer = "Default"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = 50
+			Z = 2
+		}
+		Radius = {
+			X = 50.5
+			Y = 0.5
+			Z = 2
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "4fc7a2e9-61bb-4e4c-850ab5b3cd627373"
+		Layer = "Default"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 50
+			Y = 0
+			Z = 2
+		}
+		Radius = {
+			X = 50.5
+			Y = 0.5
+			Z = 2
+		}
+		Rot = {
+			W = -0.70710700750351
+			X = 0
+			Y = 0
+			Z = -0.70710700750351
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+	{
+		Color = {
+			A = 255
+			B = 255
+			G = 255
+			R = 255
+		}
+		Id = "b6f56783-d3ad-4b36-9e38db71d725f27d"
+		Layer = "Default"
+		PhysicsMaterial = "default"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = -50
+			Y = 0
+			Z = 2
+		}
+		Radius = {
+			X = 50.5
+			Y = 0.5
+			Z = 2
+		}
+		Rot = {
+			W = -0.70710700750351
+			X = 0
+			Y = 0
+			Z = -0.70710700750351
+		}
+		ShapeTemplate = "default"
+		Visible = true
+	}
+]
+Scatter = {
+	PoolSettings = {
+	}
+	ScatterData = {
+	}
+}
+Settings = {
+	FrozenLayers = [
+	]
+	HiddenLayers = [
+	]
+	HiddenObjects = [
+	]
+	LastHiddenObjects = [
+	]
+	ShadingEnvironment = "core/rendering/default_outdoor"
+	SkydomeUnit = "core/editor_slave/units/skydome/skydome"
+	SoundEnvironment = ""
+	TimpaniSoundEnvironment = "default"
+}
+Sounds = [
+]
+Splines = [
+]
+StaticPvsBakeSettings = {
+	BoundsMax = {
+		X = 1
+		Y = 1
+		Z = 1
+	}
+	BoundsMin = {
+		X = -1
+		Y = -1
+		Z = -1
+	}
+	ExcludedObjectSets = [
+	]
+	Layers = [
+	]
+	SamplesPerCubicMeter = 1
+	SlicesX = 1
+	SlicesY = 1
+	SlicesZ = 1
+}
+Transients = {
+	Camera = {
+		InterestPointDistance = 10
+		OrthographicZoom = 10
+		Pos = {
+			X = -88.4038619995117
+			Y = -8.56489944458008
+			Z = 53.9978294372559
+		}
+		ProjectionType = 1
+		Rot = {
+			W = -0.732647001743317
+			X = 0.223095998167992
+			Y = -0.187307998538017
+			Z = 0.615118980407715
+		}
+		RotationSpeed = 0.003
+		TranslationSpeed = 6.487315
+	}
+}
+Triggers = [
+]
+Units = [
+	{
+		Id = "8dbb4908-df19-477d-8013ee53ed8377fa"
+		Layer = "Default"
+		Lights = {
+		}
+		Material = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+		Name = "animation_preview_tile_1"
+		Pivot = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Pos = {
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		Rot = {
+			W = -1
+			X = 0
+			Y = 0
+			Z = 0
+		}
+		ScriptData = {
+		}
+		Type = "core/editor_slave/units/animation_preview_tile/animation_preview_tile"
+	}
+]
+Volumes = [
+]
